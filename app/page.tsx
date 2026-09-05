@@ -1168,8 +1168,10 @@ export default function Home() {
       // accepted it until the operation finishes; the next unit follows in
       // that same booth instead of moving between booths.
       const unitNumber = Math.min(firstOrder.planQty, completedSlots + boothIndex + 1);
-      const globalSerial = Math.max(0, routePosition) * firstOrder.planQty + unitNumber;
-      const trackingId = `${firstOrder.materialCode}-S${String(index + 1).padStart(2, "0")}-B${String(boothIndex + 1).padStart(2, "0")}-${String(globalSerial).padStart(5, "0")}`;
+      // The serial identifies the physical product and must remain unchanged
+      // as it advances through the route. Station and booth identify its
+      // current location, while different booths receive different serials.
+      const trackingId = `${firstOrder.materialCode}-S${String(index + 1).padStart(2, "0")}-B${String(boothIndex + 1).padStart(2, "0")}-${String(unitNumber).padStart(5, "0")}`;
       return { planId: firstOrder.planId, materialCode: firstOrder.materialCode, unitId: trackingId, boothIndex, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: (boothElapsed % handoffInterval) / cycleSeconds, started: true, active: true };
     }) : [];
     const lineSeconds = lineOrders.reduce((sum, product) => sum + product.planQty * (product.cycleTimes[index] || 0), 0);
