@@ -1150,29 +1150,37 @@ export default function Home() {
     const handoffInterval = cycleSeconds + 60;
     const lineEntryInterval = (route[0]?.seconds ?? 0) + 60;
     const booths = configuredBooths(stationBooths, machine.key, index, twinLine);
-    // Derive station ownership from one shared route timeline. A unit is
-    // active at exactly one operation (or in the one-minute handoff gap), so
-    // it cannot be rendered in two stations at the same simulated time.
-    const activeUnits = firstOrder ? Array.from({ length: firstOrder.planQty }, (_, unitIndex) => {
-      let phase = twinTime - (scheduleTiming.get(firstOrder.planId)?.startSeconds ?? 0) - unitIndex * lineEntryInterval;
-      for (const step of route) {
-        if (phase >= 0 && phase < step.seconds) return { unitIndex, stationIndex: step.stationIndex, progress: phase / step.seconds };
-        phase -= step.seconds + 60;
-      }
-      return null;
-    }).filter((unit): unit is { unitIndex: number; stationIndex: number; progress: number } => Boolean(unit && unit.stationIndex === index)) : [];
-    const completedSlots = firstOrder && stationElapsed >= 0 && handoffInterval > 0 ? Math.floor(stationElapsed / handoffInterval) * booths : 0;
-    const remainingAtStation = firstOrder ? Math.max(0, firstOrder.planQty - completedSlots) : 0;
+    // Schedule every arrived unit onto the earliest available booth. Queue
+    // counts then come from actual service starts, while the route offset
+    // keeps a unit from being active at two stations at once.
+    const stationJobs = firstOrder ? (() => {
+      const boothAvailable = Array.from({ length: booths }, () => Number.NEGATIVE_INFINITY);
+      return Array.from({ length: firstOrder.planQty }, (_, unitIndex) => {
+        const arrival = (scheduleTiming.get(firstOrder.planId)?.startSeconds ?? 0) + unitIndex * lineEntryInterval + stationOffset;
+        let boothIndex = 0;
+        for (let candidate = 1; candidate < booths; candidate += 1) {
+          if (boothAvailable[candidate] < boothAvailable[boothIndex]) boothIndex = candidate;
+        }
+        const serviceStart = Math.max(arrival, boothAvailable[boothIndex]);
+        const serviceEnd = serviceStart + cycleSeconds;
+        boothAvailable[boothIndex] = serviceEnd + 60;
+        return { unitIndex, boothIndex, arrival, serviceStart, serviceEnd };
+      });
+    })() : [];
+    const activeUnits = stationJobs.filter((job) => job.serviceStart <= twinTime && twinTime < job.serviceEnd).map((job) => ({ unitIndex: job.unitIndex, boothIndex: job.boothIndex, progress: (twinTime - job.serviceStart) / Math.max(1, cycleSeconds) }));
     const activeAtStation = activeUnits.length > 0;
-    const unitsStarted = firstOrder && stationElapsed >= 0 ? Math.min(firstOrder.planQty, completedSlots + activeUnits.length) : 0;
-    const rawUnitsArrived = firstOrder && stationElapsed >= 0 && lineEntryInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / lineEntryInterval) + 1) : 0;
-    // Keep no more than ten units waiting at any process. As a booth frees a
-    // slot, the pull limit advances and admits the next unit immediately.
-    const unitsArrived = Math.min(rawUnitsArrived, unitsStarted + 10);
-    const queue = Math.max(0, unitsArrived - unitsStarted);
+    const unitsArrived = stationJobs.filter((job) => job.arrival <= twinTime).length;
+    const unitsCompleted = stationJobs.filter((job) => job.serviceEnd <= twinTime).length;
+    const activeBoothSlots = activeUnits.length;
+    // Queue is the number that has reached this process but is neither
+    // complete nor occupying one of its available booths. Never report more
+    // than the ten-unit pull limit; when it drops below ten, the next unit is
+    // admitted on the following simulation tick.
+    const queue = Math.min(10, Math.max(0, stationJobs.filter((job) => job.arrival <= twinTime && job.serviceStart > twinTime).length));
     // Every configured booth gets a unit whenever demand is available. The
     // queue is the remaining demand beyond these active booth assignments.
-    const tokens = firstOrder ? activeUnits.slice(0, booths).map((unit, boothIndex) => {
+    const tokens = firstOrder ? activeUnits.map((unit) => {
+      const boothIndex = unit.boothIndex;
       const unitNumber = unit.unitIndex + 1;
       // The serial identifies the physical product and must remain unchanged
       // as it advances through the route. Station and booth identify its
