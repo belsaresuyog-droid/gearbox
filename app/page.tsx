@@ -1160,8 +1160,11 @@ export default function Home() {
     const tokenCount = firstOrder && stationElapsed >= 0 ? Math.min(booths, Math.max(0, unitsArrived - completedSlots)) : 0;
     const tokens = firstOrder && tokenCount > 0 ? Array.from({ length: tokenCount }, (_, boothIndex) => {
       const boothElapsed = Math.max(0, stationElapsed - boothIndex * Math.max(1, cycleSeconds / Math.max(1, booths)));
-      const unitNumber = Math.min(firstOrder.planQty, completedSlots + boothIndex + 1);
-      return { planId: firstOrder.planId, materialCode: firstOrder.materialCode, unitId: `${firstOrder.materialCode}-${String(unitNumber).padStart(4, "0")}`, boothIndex, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: (boothElapsed % handoffInterval) / cycleSeconds, started: true, active: true };
+      // Unit IDs follow the common line-entry sequence, not each station's
+      // local cycle count, so the same unit cannot appear in two stations.
+      const unitNumber = Math.min(firstOrder.planQty, Math.floor(Math.max(0, stationElapsed) / Math.max(1, lineEntryInterval)) + boothIndex + 1);
+      const trackingId = `${firstOrder.materialCode}-${String(unitNumber).padStart(4, "0")}-S${String(index + 1).padStart(2, "0")}-B${String(boothIndex + 1).padStart(2, "0")}`;
+      return { planId: firstOrder.planId, materialCode: firstOrder.materialCode, unitId: trackingId, boothIndex, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: (boothElapsed % handoffInterval) / cycleSeconds, started: true, active: true };
     }) : [];
     const lineSeconds = lineOrders.reduce((sum, product) => sum + product.planQty * (product.cycleTimes[index] || 0), 0);
     const occupancy = Math.round(lineSeconds / Math.max(1, availableSeconds * booths * workingDays) * 100);
