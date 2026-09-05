@@ -1095,35 +1095,60 @@ export default function Home() {
     return [item.planId, { startSeconds: item.startOffsetSeconds, start: item.start, finish: item.finish }];
     }));
   }, [schedule]);
-  const twinTokens = useMemo(() => schedule.map((product) => {
+  const twinTokens = useMemo(() => {
     const processRank = new Map(routeOrder.map((key, index) => [key, index]));
-    const route = product.cycleTimes.map((seconds, stationIndex) => ({ seconds, stationIndex, key: data?.machines[stationIndex]?.key ?? "" })).filter((step) => step.seconds > 0 && step.stationIndex >= ASSEMBLY_START_INDEX).sort((a, b) => {
-      const aRank = processRank.get(a.key);
-      const bRank = processRank.get(b.key);
-      return (aRank ?? a.stationIndex + routeOrder.length) - (bRank ?? b.stationIndex + routeOrder.length);
+    const routes = schedule.map((product) => {
+      const route = product.cycleTimes.map((seconds, stationIndex) => ({ seconds, stationIndex, key: data?.machines[stationIndex]?.key ?? "" })).filter((step) => step.seconds > 0 && step.stationIndex >= ASSEMBLY_START_INDEX).sort((a, b) => {
+        const aRank = processRank.get(a.key);
+        const bRank = processRank.get(b.key);
+        return (aRank ?? a.stationIndex + routeOrder.length) - (bRank ?? b.stationIndex + routeOrder.length);
+      });
+      return { product, route, routeSeconds: Math.max(1, route.reduce((sum, step) => sum + step.seconds, 0)) };
     });
-    const routeSeconds = Math.max(1, route.reduce((sum, step) => sum + step.seconds, 0));
-    const startSeconds = scheduleTiming.get(product.planId)?.startSeconds ?? 0;
-    const elapsed = Math.max(0, twinTime - startSeconds);
-    const completed = Math.min(product.planQty, Math.floor(elapsed / product.effectiveBottleneckSeconds));
-    const started = twinTime >= startSeconds;
-    const active = started && completed < product.planQty;
-    // A product must traverse the route in order. Do not offset each order's
-    // phase, otherwise a freshly started product can appear in a later station.
-    let phase = elapsed % routeSeconds;
-    let selected = route[0] ?? { stationIndex: 0, seconds: 1, key: "" };
-    let progress = 0;
-    for (const step of route) {
-      if (phase <= step.seconds) { selected = step; progress = phase / step.seconds; break; }
-      phase -= step.seconds;
-    }
-    if (!active && completed >= product.planQty && route.length) { selected = route[route.length - 1]; progress = 1; }
-    return { planId: product.planId, materialCode: product.materialCode, family: product.family, assemblyLine: product.assemblyLine, stationIndex: selected.stationIndex, cycleSeconds: selected.seconds, progress, started, active };
-  }), [schedule, scheduleTiming, twinTime, routeOrder, data]);
+    const firstStart = Math.min(0, ...schedule.map((product) => scheduleTiming.get(product.planId)?.startSeconds ?? 0));
+    const elapsed = Math.max(0, twinTime - firstStart);
+    let cursor = 0;
+    let current: { planId: string; stationIndex: number; cycleSeconds: number; progress: number } | null = null;
+    const starts = new Map<string, number>();
+    routes.forEach(({ product, route, routeSeconds }) => {
+      starts.set(product.planId, cursor);
+      // Each piece traverses every operation in order. After completion, the
+      // line pauses for one minute before the next piece enters station one.
+      for (let unit = 0; unit < Math.max(0, product.planQty); unit += 1) {
+        const unitElapsed = elapsed - cursor;
+        if (!current && unitElapsed >= 0 && unitElapsed < routeSeconds && route.length) {
+          let phase = unitElapsed;
+          let selected = route[0];
+          let progress = 0;
+          for (const step of route) {
+            if (phase < step.seconds) { selected = step; progress = phase / step.seconds; break; }
+            phase -= step.seconds;
+          }
+          current = { planId: product.planId, stationIndex: selected.stationIndex, cycleSeconds: selected.seconds, progress };
+        }
+        cursor += routeSeconds + 60;
+      }
+    });
+    return routes.map(({ product, route }) => {
+      const selected = current?.planId === product.planId ? current : route[route.length - 1] ?? { stationIndex: 0, seconds: 1 };
+      return { planId: product.planId, materialCode: product.materialCode, family: product.family, assemblyLine: product.assemblyLine, stationIndex: selected.stationIndex, cycleSeconds: "seconds" in selected ? selected.seconds : selected.cycleSeconds, progress: current?.planId === product.planId ? current.progress : 1, started: elapsed >= (starts.get(product.planId) ?? 0), active: current?.planId === product.planId };
+    });
+  }, [schedule, scheduleTiming, twinTime, routeOrder, data]);
   const twinStations = useMemo(() => (data?.machines ?? []).map((machine, index) => ({ machine, index })).filter(({ index }) => index >= ASSEMBLY_START_INDEX && planned.some((product) => assemblyLineForProduct(product) === twinLine && (product.cycleTimes[index] || 0) > 0)).map(({ machine, index }) => {
-    const tokens = twinTokens.filter((token) => assemblyLineForProduct(token) === twinLine && token.active && token.stationIndex === index);
+    const lineOrders = schedule.filter((product) => product.assemblyLine === twinLine && product.planQty > 0 && (product.cycleTimes[index] || 0) > 0);
+    const firstOrder = lineOrders[0];
+    const cycleSeconds = firstOrder?.cycleTimes[index] || 0;
+    const processRank = new Map(routeOrder.map((key, rank) => [key, rank]));
+    const route = firstOrder ? firstOrder.cycleTimes.map((seconds, stationIndex) => ({ seconds, stationIndex, key: data?.machines[stationIndex]?.key ?? "" })).filter((step) => step.seconds > 0 && step.stationIndex >= ASSEMBLY_START_INDEX).sort((a, b) => (processRank.get(a.key) ?? a.stationIndex) - (processRank.get(b.key) ?? b.stationIndex)) : [];
+    const routePosition = route.findIndex((step) => step.stationIndex === index);
+    const stationOffset = route.slice(0, Math.max(0, routePosition)).reduce((sum, step) => sum + step.seconds + 60, 0);
+    const stationStart = firstOrder ? (scheduleTiming.get(firstOrder.planId)?.startSeconds ?? 0) + stationOffset : 0;
+    const stationElapsed = twinTime - stationStart;
+    const handoffInterval = cycleSeconds + 60;
+    const activeAtStation = Boolean(firstOrder && cycleSeconds > 0 && stationElapsed >= 0 && stationElapsed % handoffInterval < cycleSeconds);
+    const tokens = activeAtStation && firstOrder ? [{ planId: firstOrder.planId, materialCode: firstOrder.materialCode, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: (stationElapsed % handoffInterval) / cycleSeconds, started: true, active: true }] : [];
     const booths = configuredBooths(stationBooths, machine.key, index, twinLine);
-    const lineSeconds = planned.filter((product) => assemblyLineForProduct(product) === twinLine).reduce((sum, product) => sum + product.planQty * (product.cycleTimes[index] || 0), 0);
+    const lineSeconds = lineOrders.reduce((sum, product) => sum + product.planQty * (product.cycleTimes[index] || 0), 0);
     const occupancy = Math.round(lineSeconds / Math.max(1, availableSeconds * booths * workingDays) * 100);
     const status = downStations.includes(machine.key) ? "DOWN" : occupancy > 100 ? "OVERLOAD" : tokens.length ? "RUNNING" : "IDLE";
     const health = status === "DOWN" ? 0 : Math.max(40, Math.round(twinHealth - Math.max(0, occupancy - 70) * .35));
@@ -1132,7 +1157,7 @@ export default function Home() {
     const aRank = routeOrder.indexOf(a.key);
     const bRank = routeOrder.indexOf(b.key);
     return (aRank < 0 ? Number.MAX_SAFE_INTEGER : aRank) - (bRank < 0 ? Number.MAX_SAFE_INTEGER : bRank);
-  }), [data, twinTokens, workingDays, availableSeconds, twinHealth, downStations, routeOrder, stationBooths, planned, twinLine]);
+  }), [data, schedule, scheduleTiming, twinTime, workingDays, availableSeconds, twinHealth, downStations, routeOrder, stationBooths, planned, twinLine]);
   const orderedTwinStations = useMemo(() => {
     const rank = new Map(routeOrder.map((id, index) => [id, index]));
     return [...twinStations].sort((a, b) => (rank.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.key) ?? Number.MAX_SAFE_INTEGER));
