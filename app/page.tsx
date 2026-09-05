@@ -1147,14 +1147,17 @@ export default function Home() {
     const handoffInterval = cycleSeconds + 60;
     const activeAtStation = Boolean(firstOrder && cycleSeconds > 0 && stationElapsed >= 0 && stationElapsed % handoffInterval < cycleSeconds);
     const lineEntryInterval = (route[0]?.seconds ?? 0) + 60;
-    const unitsArrived = firstOrder && stationElapsed >= 0 && lineEntryInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / lineEntryInterval) + 1) : 0;
     const booths = configuredBooths(stationBooths, machine.key, index, twinLine);
     const completedSlots = firstOrder && stationElapsed >= 0 && handoffInterval > 0 ? Math.floor(stationElapsed / handoffInterval) * booths : 0;
     const unitsStarted = firstOrder && stationElapsed >= 0 ? Math.min(firstOrder.planQty, completedSlots + (activeAtStation ? booths : 0)) : 0;
+    const rawUnitsArrived = firstOrder && stationElapsed >= 0 && lineEntryInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / lineEntryInterval) + 1) : 0;
+    // Keep no more than ten units waiting at any process. As a booth frees a
+    // slot, the pull limit advances and admits the next unit immediately.
+    const unitsArrived = Math.min(rawUnitsArrived, unitsStarted + 10);
     const queue = Math.max(0, unitsArrived - unitsStarted);
     // Every configured booth gets a unit whenever demand is available. The
     // queue is the remaining demand beyond these active booth assignments.
-    const tokenCount = firstOrder && stationElapsed >= 0 ? Math.min(booths, Math.max(0, firstOrder.planQty - completedSlots)) : 0;
+    const tokenCount = firstOrder && stationElapsed >= 0 ? Math.min(booths, Math.max(0, unitsArrived - completedSlots)) : 0;
     const tokens = firstOrder && tokenCount > 0 ? Array.from({ length: tokenCount }, (_, boothIndex) => {
       const boothElapsed = Math.max(0, stationElapsed - boothIndex * Math.max(1, cycleSeconds / Math.max(1, booths)));
       return { planId: firstOrder.planId, materialCode: firstOrder.materialCode, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: (boothElapsed % handoffInterval) / cycleSeconds, started: true, active: true };
