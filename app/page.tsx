@@ -1152,7 +1152,7 @@ export default function Home() {
     const queue = Math.max(0, unitsArrived - unitsStarted);
     const booths = configuredBooths(stationBooths, machine.key, index, twinLine);
     const tokenCount = Math.min(booths, queue + (activeAtStation ? 1 : 0));
-    const tokens = firstOrder && tokenCount > 0 ? Array.from({ length: tokenCount }, (_, boothIndex) => ({ planId: firstOrder.planId, materialCode: firstOrder.materialCode, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: boothIndex === 0 && activeAtStation ? (stationElapsed % handoffInterval) / cycleSeconds : 0, started: true, active: boothIndex === 0 && activeAtStation })) : [];
+    const tokens = firstOrder && tokenCount > 0 ? Array.from({ length: tokenCount }, (_, boothIndex) => ({ planId: firstOrder.planId, materialCode: firstOrder.materialCode, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: boothIndex === 0 && activeAtStation ? (stationElapsed % handoffInterval) / cycleSeconds : 0, started: true, active: true })) : [];
     const lineSeconds = lineOrders.reduce((sum, product) => sum + product.planQty * (product.cycleTimes[index] || 0), 0);
     const occupancy = Math.round(lineSeconds / Math.max(1, availableSeconds * booths * workingDays) * 100);
     const status = downStations.includes(machine.key) ? "DOWN" : occupancy > 100 ? "OVERLOAD" : tokens.length ? "RUNNING" : "IDLE";
