@@ -1148,11 +1148,17 @@ export default function Home() {
     const activeAtStation = Boolean(firstOrder && cycleSeconds > 0 && stationElapsed >= 0 && stationElapsed % handoffInterval < cycleSeconds);
     const lineEntryInterval = (route[0]?.seconds ?? 0) + 60;
     const unitsArrived = firstOrder && stationElapsed >= 0 && lineEntryInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / lineEntryInterval) + 1) : 0;
-    const unitsStarted = firstOrder && stationElapsed >= 0 && handoffInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / handoffInterval) + 1) : 0;
-    const queue = Math.max(0, unitsArrived - unitsStarted);
     const booths = configuredBooths(stationBooths, machine.key, index, twinLine);
-    const tokenCount = Math.min(booths, queue + (activeAtStation ? 1 : 0));
-    const tokens = firstOrder && tokenCount > 0 ? Array.from({ length: tokenCount }, (_, boothIndex) => ({ planId: firstOrder.planId, materialCode: firstOrder.materialCode, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: boothIndex === 0 && activeAtStation ? (stationElapsed % handoffInterval) / cycleSeconds : 0, started: true, active: true })) : [];
+    const completedSlots = firstOrder && stationElapsed >= 0 && handoffInterval > 0 ? Math.floor(stationElapsed / handoffInterval) * booths : 0;
+    const unitsStarted = firstOrder && stationElapsed >= 0 ? Math.min(firstOrder.planQty, completedSlots + (activeAtStation ? booths : 0)) : 0;
+    const queue = Math.max(0, unitsArrived - unitsStarted);
+    // Every configured booth gets a unit whenever demand is available. The
+    // queue is the remaining demand beyond these active booth assignments.
+    const tokenCount = firstOrder && stationElapsed >= 0 ? Math.min(booths, Math.max(0, firstOrder.planQty - completedSlots)) : 0;
+    const tokens = firstOrder && tokenCount > 0 ? Array.from({ length: tokenCount }, (_, boothIndex) => {
+      const boothElapsed = Math.max(0, stationElapsed - boothIndex * Math.max(1, cycleSeconds / Math.max(1, booths)));
+      return { planId: firstOrder.planId, materialCode: firstOrder.materialCode, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: (boothElapsed % handoffInterval) / cycleSeconds, started: true, active: true };
+    }) : [];
     const lineSeconds = lineOrders.reduce((sum, product) => sum + product.planQty * (product.cycleTimes[index] || 0), 0);
     const occupancy = Math.round(lineSeconds / Math.max(1, availableSeconds * booths * workingDays) * 100);
     const status = downStations.includes(machine.key) ? "DOWN" : occupancy > 100 ? "OVERLOAD" : tokens.length ? "RUNNING" : "IDLE";
