@@ -1147,12 +1147,16 @@ export default function Home() {
     const handoffInterval = cycleSeconds + 60;
     const activeAtStation = Boolean(firstOrder && cycleSeconds > 0 && stationElapsed >= 0 && stationElapsed % handoffInterval < cycleSeconds);
     const tokens = activeAtStation && firstOrder ? [{ planId: firstOrder.planId, materialCode: firstOrder.materialCode, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: (stationElapsed % handoffInterval) / cycleSeconds, started: true, active: true }] : [];
+    const lineEntryInterval = (route[0]?.seconds ?? 0) + 60;
+    const unitsArrived = firstOrder && stationElapsed >= 0 && lineEntryInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / lineEntryInterval) + 1) : 0;
+    const unitsStarted = firstOrder && stationElapsed >= 0 && handoffInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / handoffInterval) + 1) : 0;
+    const queue = Math.max(0, unitsArrived - unitsStarted);
     const booths = configuredBooths(stationBooths, machine.key, index, twinLine);
     const lineSeconds = lineOrders.reduce((sum, product) => sum + product.planQty * (product.cycleTimes[index] || 0), 0);
     const occupancy = Math.round(lineSeconds / Math.max(1, availableSeconds * booths * workingDays) * 100);
     const status = downStations.includes(machine.key) ? "DOWN" : occupancy > 100 ? "OVERLOAD" : tokens.length ? "RUNNING" : "IDLE";
     const health = status === "DOWN" ? 0 : Math.max(40, Math.round(twinHealth - Math.max(0, occupancy - 70) * .35));
-    return { ...machine, index, tokens, booths, occupancy, status, health, queue: Math.max(0, tokens.length - booths) };
+    return { ...machine, index, tokens, booths, occupancy, status, health, queue };
   }).sort((a, b) => {
     const aRank = routeOrder.indexOf(a.key);
     const bRank = routeOrder.indexOf(b.key);
