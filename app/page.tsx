@@ -1167,7 +1167,18 @@ export default function Home() {
         return { unitIndex, boothIndex, arrival, serviceStart, serviceEnd };
       });
     })() : [];
-    const activeUnits = stationJobs.filter((job) => job.serviceStart <= twinTime && twinTime < job.serviceEnd).map((job) => ({ unitIndex: job.unitIndex, boothIndex: job.boothIndex, progress: (twinTime - job.serviceStart) / Math.max(1, cycleSeconds) }));
+    const activeUnits = firstOrder ? Array.from({ length: firstOrder.planQty }, (_, unitIndex) => {
+      let phase = twinTime - (scheduleTiming.get(firstOrder.planId)?.startSeconds ?? 0) - unitIndex * lineEntryInterval;
+      for (const step of route) {
+        if (phase >= 0 && phase < step.seconds) {
+          if (step.stationIndex !== index) return null;
+          const job = stationJobs.find((candidate) => candidate.unitIndex === unitIndex);
+          return { unitIndex, boothIndex: job?.boothIndex ?? (unitIndex % booths), progress: phase / Math.max(1, step.seconds) };
+        }
+        phase -= step.seconds + 60;
+      }
+      return null;
+    }).filter((unit): unit is { unitIndex: number; boothIndex: number; progress: number } => Boolean(unit)) : [];
     const activeAtStation = activeUnits.length > 0;
     const unitsArrived = stationJobs.filter((job) => job.arrival <= twinTime).length;
     const unitsCompleted = stationJobs.filter((job) => job.serviceEnd <= twinTime).length;
