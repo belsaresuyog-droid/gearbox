@@ -1146,12 +1146,13 @@ export default function Home() {
     const stationElapsed = twinTime - stationStart;
     const handoffInterval = cycleSeconds + 60;
     const activeAtStation = Boolean(firstOrder && cycleSeconds > 0 && stationElapsed >= 0 && stationElapsed % handoffInterval < cycleSeconds);
-    const tokens = activeAtStation && firstOrder ? [{ planId: firstOrder.planId, materialCode: firstOrder.materialCode, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: (stationElapsed % handoffInterval) / cycleSeconds, started: true, active: true }] : [];
     const lineEntryInterval = (route[0]?.seconds ?? 0) + 60;
     const unitsArrived = firstOrder && stationElapsed >= 0 && lineEntryInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / lineEntryInterval) + 1) : 0;
     const unitsStarted = firstOrder && stationElapsed >= 0 && handoffInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / handoffInterval) + 1) : 0;
     const queue = Math.max(0, unitsArrived - unitsStarted);
     const booths = configuredBooths(stationBooths, machine.key, index, twinLine);
+    const tokenCount = Math.min(booths, queue + (activeAtStation ? 1 : 0));
+    const tokens = firstOrder && tokenCount > 0 ? Array.from({ length: tokenCount }, (_, boothIndex) => ({ planId: firstOrder.planId, materialCode: firstOrder.materialCode, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: boothIndex === 0 && activeAtStation ? (stationElapsed % handoffInterval) / cycleSeconds : 0, started: true, active: boothIndex === 0 && activeAtStation })) : [];
     const lineSeconds = lineOrders.reduce((sum, product) => sum + product.planQty * (product.cycleTimes[index] || 0), 0);
     const occupancy = Math.round(lineSeconds / Math.max(1, availableSeconds * booths * workingDays) * 100);
     const status = downStations.includes(machine.key) ? "DOWN" : occupancy > 100 ? "OVERLOAD" : tokens.length ? "RUNNING" : "IDLE";
@@ -2082,7 +2083,7 @@ export default function Home() {
             <div className="production-route">{orderedTwinStations.map((station, stationIndex) => {
               return <div className={`process-booth-group ${station.booths > 1 ? "multiple-booths" : "single-booth"}`} style={station.booths > 1 ? { backgroundSize: `${100 - (100 / station.booths)}% 3px` } : undefined} key={station.key}>{Array.from({ length: station.booths }, (_, boothIndex) => {
                   const assigned = station.tokens[boothIndex];
-                  const boothStatus = station.status === "DOWN" ? "DOWN" : assigned ? "RUNNING" : "AVAILABLE";
+                  const boothStatus = station.status === "DOWN" ? "DOWN" : assigned?.active ? "RUNNING" : assigned ? "QUEUED" : "AVAILABLE";
                   return <article className={`production-stage booth-process process-tone-${stationIndex % 7} ${boothStatus.toLowerCase()}`} key={`${station.key}-booth-${boothIndex + 1}`}>
                     <div className="stage-sequence"><span>{String(stationIndex + 1).padStart(2, "0")}</span></div>
                     <header><div><small>{twinLine} · {station.index < 14 ? "RIVETING" : "ASSEMBLY"} · BOOTH {String(boothIndex + 1).padStart(2, "0")}</small><h4>{station.name}</h4></div><em>{boothStatus}</em></header>
