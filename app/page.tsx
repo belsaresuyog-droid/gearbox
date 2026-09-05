@@ -33,6 +33,20 @@ const fmt = new Intl.NumberFormat("en-IN");
 const monthName = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" });
 const dayName = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "2-digit", month: "short" });
 
+async function fetchJsonWithTimeout<T>(url: string, fallback: T, timeoutMs = 2500): Promise<T> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return fallback;
+    return await response.json() as T;
+  } catch {
+    return fallback;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function assemblyLineForFamily(family: string): AssemblyLine {
   return family === "615" || family === "CP" ? "AL1" : "AL2";
 }
@@ -235,10 +249,10 @@ export default function Home() {
 
   useEffect(() => { if (!authIsAdmin) return; fetch("/api/users").then((response) => response.ok ? response.json() : { users: [] }).then((payload: { users?: ManagedUser[] }) => setManagedUsers(Array.isArray(payload.users) ? payload.users : [])).catch(() => setManagedUsers([])); }, [authIsAdmin]);
   useEffect(() => { if (!authChecked) return; Promise.all([
-    fetch("/planner-data.json").then((r) => r.json()) as Promise<PlannerData>,
-    fetch("/api/products").then((r) => r.ok ? r.json() : { customProducts: [], deletedProductIds: [] }) as Promise<CatalogPayload>,
-    fetch("/skill-matrix.json").then((r) => r.ok ? r.json() : null) as Promise<SkillMatrix | null>,
-    fetch("/bom-products.json").then((r) => r.ok ? r.json() : []).catch(() => []) as Promise<string[]>,
+    fetchJsonWithTimeout<PlannerData>("/planner-data.json", { source: "", machines: [], families: [], products: [] }),
+    fetchJsonWithTimeout<CatalogPayload>("/api/products", { customProducts: [], deletedProductIds: [] }),
+    Promise.resolve(null as SkillMatrix | null),
+    Promise.resolve([] as string[]),
   ]).then(([d, catalog, skills, bomCodes]) => {
     setSkillMatrix(skills);
     const custom = (Array.isArray(catalog.customProducts) ? catalog.customProducts : []).filter((product) => product.family === "CP");
@@ -275,7 +289,7 @@ export default function Home() {
       return response.json() as Promise<{ plan: SavedPlan | null }>;
     }).then(({ plan }) => {
       if (cancelled) return;
-      if (plan) {
+      if (plan && Array.isArray(plan.planned) && plan.planned.some((item) => item.family === "CP" || String(item.materialCode ?? "").toUpperCase().startsWith("CP PAIR"))) {
         setPlanned(Array.isArray(plan.planned) ? plan.planned.filter((item) => item.family === "CP" || String(item.materialCode ?? "").toUpperCase().startsWith("CP PAIR")).map((item) => { const fallback = new Date(`${startDate}T00:00:00`); fallback.setDate(fallback.getDate() + Math.max(0, (item.dueDay ?? 1) - 1)); const masterProduct = data.products.find((product) => product.id === item.id || product.materialCode === item.materialCode); return { ...item, family: "CP", assemblyLine: masterProduct ? assemblyLineForProduct(masterProduct) : "AL1", dueDate: item.dueDate || localDateKey(fallback) }; }) : []);
         setHolidays(Array.isArray(plan.holidays) ? plan.holidays : []);
         setHours(Number(plan.hours) || 16);

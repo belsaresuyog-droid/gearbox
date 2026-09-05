@@ -56,19 +56,13 @@ test("planning API validates periods and upserts plans in D1", async () => {
   assert.match(api, /status: 409/);
 });
 
-test("planner imports XLSX dynamically and maps workbook rows", async () => {
+test("planner loads the CP pair master without legacy factory datasets", async () => {
   const page = await source("app/page.tsx");
-  assert.match(page, /import\("xlsx"\)/);
-  assert.match(page, /XLSX\.utils\.sheet_to_json/);
-  assert.match(page, /SheetNames\.map/);
-  assert.match(page, /valueFor\(row, "fgpartno", "partno"/);
-  assert.match(page, /find\("fgpartno", "partno"/);
-  assert.match(page, /uploadedPlanningRows/);
-  assert.match(page, /uploadedBomRows/);
-  assert.match(page, /bom-products\.json/);
-  assert.match(page, /bundledBomProducts/);
-  assert.match(page, /missingCodes/);
-  assert.match(page, /added to Product Family/);
+  assert.match(page, /fetchJsonWithTimeout<PlannerData>\("\/planner-data\.json"/);
+  assert.match(page, /family === "CP"/);
+  assert.doesNotMatch(page, /skill-matrix\.json/);
+  assert.doesNotMatch(page, /bom-products\.json/);
+  assert.doesNotMatch(page, /PC_TUBE_STORE_PM_PLAN/);
 });
 
 test("operator and administrator workflows expose shared save controls", async () => {
