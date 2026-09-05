@@ -1150,13 +1150,21 @@ export default function Home() {
     const handoffInterval = cycleSeconds + 60;
     const lineEntryInterval = (route[0]?.seconds ?? 0) + 60;
     const booths = configuredBooths(stationBooths, machine.key, index, twinLine);
+    // Derive station ownership from one shared route timeline. A unit is
+    // active at exactly one operation (or in the one-minute handoff gap), so
+    // it cannot be rendered in two stations at the same simulated time.
+    const activeUnits = firstOrder ? Array.from({ length: firstOrder.planQty }, (_, unitIndex) => {
+      let phase = twinTime - (scheduleTiming.get(firstOrder.planId)?.startSeconds ?? 0) - unitIndex * lineEntryInterval;
+      for (const step of route) {
+        if (phase >= 0 && phase < step.seconds) return { unitIndex, stationIndex: step.stationIndex, progress: phase / step.seconds };
+        phase -= step.seconds + 60;
+      }
+      return null;
+    }).filter((unit): unit is { unitIndex: number; stationIndex: number; progress: number } => Boolean(unit && unit.stationIndex === index)) : [];
     const completedSlots = firstOrder && stationElapsed >= 0 && handoffInterval > 0 ? Math.floor(stationElapsed / handoffInterval) * booths : 0;
     const remainingAtStation = firstOrder ? Math.max(0, firstOrder.planQty - completedSlots) : 0;
-    // Keep a station active while it still has unprocessed demand. This keeps
-    // short-cycle operations such as Pair numbering from appearing idle while
-    // the line is still producing.
-    const activeAtStation = Boolean(firstOrder && cycleSeconds > 0 && stationElapsed >= 0 && remainingAtStation > 0);
-    const unitsStarted = firstOrder && stationElapsed >= 0 ? Math.min(firstOrder.planQty, completedSlots + (activeAtStation ? booths : 0)) : 0;
+    const activeAtStation = activeUnits.length > 0;
+    const unitsStarted = firstOrder && stationElapsed >= 0 ? Math.min(firstOrder.planQty, completedSlots + activeUnits.length) : 0;
     const rawUnitsArrived = firstOrder && stationElapsed >= 0 && lineEntryInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / lineEntryInterval) + 1) : 0;
     // Keep no more than ten units waiting at any process. As a booth frees a
     // slot, the pull limit advances and admits the next unit immediately.
@@ -1164,18 +1172,13 @@ export default function Home() {
     const queue = Math.max(0, unitsArrived - unitsStarted);
     // Every configured booth gets a unit whenever demand is available. The
     // queue is the remaining demand beyond these active booth assignments.
-    const tokenCount = firstOrder && stationElapsed >= 0 && activeAtStation && remainingAtStation > 0 ? Math.min(booths, Math.max(1, remainingAtStation)) : 0;
-    const tokens = firstOrder && tokenCount > 0 ? Array.from({ length: tokenCount }, (_, boothIndex) => {
-      const boothElapsed = Math.max(0, stationElapsed - boothIndex * Math.max(1, cycleSeconds / Math.max(1, booths)));
-      // Each booth owns its own sequence. A unit stays in the booth that
-      // accepted it until the operation finishes; the next unit follows in
-      // that same booth instead of moving between booths.
-      const unitNumber = Math.min(firstOrder.planQty, completedSlots + boothIndex + 1);
+    const tokens = firstOrder ? activeUnits.slice(0, booths).map((unit, boothIndex) => {
+      const unitNumber = unit.unitIndex + 1;
       // The serial identifies the physical product and must remain unchanged
       // as it advances through the route. Station and booth identify its
       // current location, while different booths receive different serials.
       const trackingId = `${firstOrder.materialCode}-S${String(index + 1).padStart(2, "0")}-B${String(boothIndex + 1).padStart(2, "0")}-${String(unitNumber).padStart(5, "0")}`;
-      return { planId: firstOrder.planId, materialCode: firstOrder.materialCode, unitId: trackingId, boothIndex, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: (boothElapsed % handoffInterval) / cycleSeconds, started: true, active: true };
+      return { planId: firstOrder.planId, materialCode: firstOrder.materialCode, unitId: trackingId, boothIndex, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: unit.progress, started: true, active: true };
     }) : [];
     const lineSeconds = lineOrders.reduce((sum, product) => sum + product.planQty * (product.cycleTimes[index] || 0), 0);
     const occupancy = Math.round(lineSeconds / Math.max(1, availableSeconds * booths * workingDays) * 100);
