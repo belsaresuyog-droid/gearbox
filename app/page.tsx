@@ -1141,7 +1141,7 @@ export default function Home() {
     const processRank = new Map(routeOrder.map((key, rank) => [key, rank]));
     const route = firstOrder ? firstOrder.cycleTimes.map((seconds, stationIndex) => ({ seconds, stationIndex, key: data?.machines[stationIndex]?.key ?? "" })).filter((step) => step.seconds > 0 && step.stationIndex >= ASSEMBLY_START_INDEX).sort((a, b) => (processRank.get(a.key) ?? a.stationIndex) - (processRank.get(b.key) ?? b.stationIndex)) : [];
     const routePosition = route.findIndex((step) => step.stationIndex === index);
-    const stationOffset = route.slice(0, Math.max(0, routePosition)).reduce((sum, step) => sum + step.seconds + 60, 0);
+    const stationOffset = route.slice(0, Math.max(0, routePosition)).reduce((sum, step) => sum + step.seconds, 0);
     const stationStart = firstOrder ? (scheduleTiming.get(firstOrder.planId)?.startSeconds ?? 0) + stationOffset : 0;
     const stationElapsed = twinTime - stationStart;
     const handoffInterval = cycleSeconds + 60;
@@ -1160,9 +1160,10 @@ export default function Home() {
     const tokenCount = firstOrder && stationElapsed >= 0 ? Math.min(booths, Math.max(0, unitsArrived - completedSlots)) : 0;
     const tokens = firstOrder && tokenCount > 0 ? Array.from({ length: tokenCount }, (_, boothIndex) => {
       const boothElapsed = Math.max(0, stationElapsed - boothIndex * Math.max(1, cycleSeconds / Math.max(1, booths)));
-      // Unit IDs follow the common line-entry sequence, not each station's
-      // local cycle count, so the same unit cannot appear in two stations.
-      const unitNumber = Math.min(firstOrder.planQty, Math.floor(Math.max(0, stationElapsed) / Math.max(1, lineEntryInterval)) + boothIndex + 1);
+      // Each booth owns its own sequence. A unit stays in the booth that
+      // accepted it until the operation finishes; the next unit follows in
+      // that same booth instead of moving between booths.
+      const unitNumber = Math.min(firstOrder.planQty, completedSlots + boothIndex + 1);
       const trackingId = `${firstOrder.materialCode}-S${String(index + 1).padStart(2, "0")}-B${String(boothIndex + 1).padStart(2, "0")}-${String(unitNumber).padStart(4, "0")}`;
       return { planId: firstOrder.planId, materialCode: firstOrder.materialCode, unitId: trackingId, boothIndex, family: firstOrder.family, assemblyLine: firstOrder.assemblyLine, stationIndex: index, cycleSeconds, progress: (boothElapsed % handoffInterval) / cycleSeconds, started: true, active: true };
     }) : [];
