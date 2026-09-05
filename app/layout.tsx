@@ -12,11 +12,11 @@ import "./tube-product-status.css";
 import "./readability.css";
 
 export const metadata: Metadata = {
-  title: "LinePilot | Monthly Production Planning",
-  description: "Plan production by product family, cycle time and monthly machine capacity.",
+  title: "LinePilot | CP Pair Production Planning",
+  description: "Plan CP pair production by operation cycle time and machine capacity.",
   openGraph: {
-    title: "LinePilot | Monthly Production Planning",
-    description: "Production planning for product families 818 and 1021.",
+    title: "LinePilot | CP Pair Production Planning",
+    description: "Production planning for CP pair operations and cycle times.",
     images: [{ url: "/og.png", width: 1200, height: 630, alt: "LinePilot monthly production planning" }],
   },
   twitter: { card: "summary_large_image", images: ["/og.png"] },

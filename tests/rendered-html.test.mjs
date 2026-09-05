@@ -60,8 +60,15 @@ test("planner imports XLSX dynamically and maps workbook rows", async () => {
   const page = await source("app/page.tsx");
   assert.match(page, /import\("xlsx"\)/);
   assert.match(page, /XLSX\.utils\.sheet_to_json/);
+  assert.match(page, /SheetNames\.map/);
+  assert.match(page, /valueFor\(row, "fgpartno", "partno"/);
+  assert.match(page, /find\("fgpartno", "partno"/);
   assert.match(page, /uploadedPlanningRows/);
   assert.match(page, /uploadedBomRows/);
+  assert.match(page, /bom-products\.json/);
+  assert.match(page, /bundledBomProducts/);
+  assert.match(page, /missingCodes/);
+  assert.match(page, /added to Product Family/);
 });
 
 test("operator and administrator workflows expose shared save controls", async () => {

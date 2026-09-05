@@ -39,7 +39,7 @@ const PC_TUBE_STORE_PM_PLAN: SourcePmPlan[] = [
 type AssemblyLine = "AL1" | "AL2";
 type ChatMessage = { id: string; role: "user" | "assistant"; text: string };
 type AssistantAction = { kind: "oee" | "hours" | "addHoliday" | "removeHoliday" | "planQty" | "dueDate" | "booths"; label: string; value: number | string; planId?: string; machineKey?: string; machineIndex?: number; line?: AssemblyLine | null };
-const ASSEMBLY_START_INDEX = 10;
+const ASSEMBLY_START_INDEX = 0;
 const TUBE_SHOP_AVAILABLE_STATIONS: Record<string, number> = { m1: 2, m2: 1, m3: 2, m4: 2, m5: 3, m6: 1, m7: 1, m8: 1, m9: 1, m10: 2 };
 const SHIFT_SEGMENTS = [{ start: 8 * 60, end: 12 * 60 + 30 }, { start: 13 * 60, end: 16 * 60 }, { start: 16 * 60 + 10, end: 17 * 60 }];
 
@@ -48,7 +48,7 @@ const monthName = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numer
 const dayName = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "2-digit", month: "short" });
 
 function assemblyLineForFamily(family: string): AssemblyLine {
-  return family === "615" ? "AL1" : "AL2";
+  return family === "615" || family === "CP" ? "AL1" : "AL2";
 }
 
 function assemblyLineForProduct(product: { family: string; assemblyLine?: AssemblyLine }): AssemblyLine {
@@ -145,7 +145,7 @@ export default function Home() {
   const [sourceProducts, setSourceProducts] = useState<Product[]>([]);
   const [customProducts, setCustomProducts] = useState<Product[]>([]);
   const [deletedProductIds, setDeletedProductIds] = useState<number[]>([]);
-  const [selectedFamilies, setSelectedFamilies] = useState(["615", "818", "1021"]);
+  const [selectedFamilies, setSelectedFamilies] = useState(["CP"]);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"plan" | "feeder" | "actual" | "schedule" | "capacity" | "maintenance" | "catalog" | "skills" | "users" | "twin">("plan");
   const [planSubTab, setPlanSubTab] = useState<"plan" | "capacity">("plan");
@@ -172,12 +172,12 @@ export default function Home() {
   const [actualSelectedDate, setActualSelectedDate] = useState("");
   const [feederWorkingHoursOpen, setFeederWorkingHoursOpen] = useState(true);
   const [graphProcessIndex, setGraphProcessIndex] = useState(0);
-  const [startDate, setStartDate] = useState("2026-08-01");
-  const [endDate, setEndDate] = useState("2026-08-31");
+  const [startDate, setStartDate] = useState("2026-09-01");
+  const [endDate, setEndDate] = useState("2026-09-30");
   const month = `${startDate}_${endDate}`;
   const [savedRanges, setSavedRanges] = useState<string[]>([]);
-  const [draftStartDate, setDraftStartDate] = useState("2026-08-01");
-  const [draftEndDate, setDraftEndDate] = useState("2026-08-31");
+  const [draftStartDate, setDraftStartDate] = useState("2026-09-01");
+  const [draftEndDate, setDraftEndDate] = useState("2026-09-30");
   const [periodMessage, setPeriodMessage] = useState("");
   const [deletingPeriod, setDeletingPeriod] = useState(false);
   const deletedPeriodsRef = useRef(new Set<string>());
@@ -201,7 +201,7 @@ export default function Home() {
   const [hydratedMonth, setHydratedMonth] = useState("");
   const [saveState, setSaveState] = useState<"loading" | "saving" | "saved" | "error">("loading");
   const [showProductForm, setShowProductForm] = useState(false);
-  const [productDraft, setProductDraft] = useState<ProductDraft>({ materialCode: "", family: "818", assemblyLine: "AL2", segment: "NON AUTO", bomAvailable: true, orderQty: 0, cycleTimes: [] });
+  const [productDraft, setProductDraft] = useState<ProductDraft>({ materialCode: "", family: "CP", assemblyLine: "AL1", segment: "CP PAIR", bomAvailable: true, orderQty: 0, cycleTimes: [] });
   const [catalogState, setCatalogState] = useState<"saved" | "saving" | "error">("saved");
   const [twinRunning, setTwinRunning] = useState(true);
   const [twinSpeed, setTwinSpeed] = useState(25);
@@ -229,16 +229,16 @@ export default function Home() {
   const [uploadedBomRows, setUploadedBomRows] = useState<UploadedBomRow[]>([]);
   const [uploadMessage, setUploadMessage] = useState("");
   const [actualProduction, setActualProduction] = useState<ActualProduction[]>([]);
-  const [actualDraft, setActualDraft] = useState({ date: "2026-08-01", planId: "", beforeLunchQuantity: "", endOfDayQuantity: "" });
-  const [scheduleActualDraft, setScheduleActualDraft] = useState({ date: "2026-08-01", planId: "", beforeLunchQuantity: "", endOfDayQuantity: "" });
+  const [actualDraft, setActualDraft] = useState({ date: "2026-09-01", planId: "", beforeLunchQuantity: "", endOfDayQuantity: "" });
+  const [scheduleActualDraft, setScheduleActualDraft] = useState({ date: "2026-09-01", planId: "", beforeLunchQuantity: "", endOfDayQuantity: "" });
   const [editingActualId, setEditingActualId] = useState<string | null>(null);
   const [feederSaveState, setFeederSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [tubeCompletionOpen, setTubeCompletionOpen] = useState(true);
   const [powderTrackerOpen, setPowderTrackerOpen] = useState(true);
   const [workingHoursOpen, setWorkingHoursOpen] = useState(true);
   const [pmOpen, setPmOpen] = useState(true);
-  const [selectedDayPlanDate, setSelectedDayPlanDate] = useState("2026-08-01");
-  const [selectedFeederDayPlanDate, setSelectedFeederDayPlanDate] = useState("2026-07-01");
+  const [selectedDayPlanDate, setSelectedDayPlanDate] = useState("2026-09-01");
+  const [selectedFeederDayPlanDate, setSelectedFeederDayPlanDate] = useState("2026-08-01");
   const [draggedStationId, setDraggedStationId] = useState<string | null>(null);
   const [dropStationId, setDropStationId] = useState<string | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -253,14 +253,25 @@ export default function Home() {
     fetch("/planner-data.json").then((r) => r.json()) as Promise<PlannerData>,
     fetch("/api/products").then((r) => r.ok ? r.json() : { customProducts: [], deletedProductIds: [] }) as Promise<CatalogPayload>,
     fetch("/skill-matrix.json").then((r) => r.ok ? r.json() : null) as Promise<SkillMatrix | null>,
-  ]).then(([d, catalog, skills]) => {
+    fetch("/bom-products.json").then((r) => r.ok ? r.json() : []).catch(() => []) as Promise<string[]>,
+  ]).then(([d, catalog, skills, bomCodes]) => {
     setSkillMatrix(skills);
     const custom = Array.isArray(catalog.customProducts) ? catalog.customProducts : [];
     const deleted = Array.isArray(catalog.deletedProductIds) ? catalog.deletedProductIds : [];
     setSourceProducts(d.products);
     setCustomProducts(custom);
     setDeletedProductIds(deleted);
-    const mergedProducts = [...new Map([...d.products, ...custom].map((product) => [product.id, { ...product, assemblyLine: assemblyLineForProduct(product) }])).values()].filter((product) => !deleted.includes(product.id));
+    const familyTemplates = new Map<string, Product>();
+    d.products.forEach((product) => { if (!familyTemplates.has(product.family)) familyTemplates.set(product.family, product); });
+    const knownCodes = new Set([...d.products, ...custom].map((product) => product.materialCode.toUpperCase()));
+    const bundledBomProducts = (Array.isArray(bomCodes) ? bomCodes : []).flatMap((code, index) => {
+      const materialCode = String(code).trim().toUpperCase();
+      const family = materialCode.split("-")[0];
+      const template = familyTemplates.get(family);
+      if (!template || knownCodes.has(materialCode)) return [];
+      return [{ ...template, id: 100000 + index, materialCode, orderQty: 0, bomAvailable: true }];
+    });
+    const mergedProducts = [...new Map([...d.products, ...custom, ...bundledBomProducts].map((product) => [product.id, { ...product, assemblyLine: assemblyLineForProduct(product) }])).values()].filter((product) => !deleted.includes(product.id));
     setData({ ...d, products: mergedProducts, families: [...new Set(mergedProducts.map((product) => product.family))].sort() });
   }); }, [authChecked, authUser]);
 
@@ -306,7 +317,7 @@ export default function Home() {
         setActualProduction(Array.isArray(plan.actualProduction) ? plan.actualProduction : []);
         setFeederSaveState("saved");
       } else {
-        const seed = data.products.filter((p) => ["615", "818", "1021"].includes(p.family) && p.orderQty > 0).slice(0, 8);
+        const seed = data.products.filter((p) => p.orderQty > 0).slice(0, 8);
         setPlanned(seed.map((p, i) => { const due = new Date(`${startDate}T00:00:00`); due.setDate(due.getDate() + 3 + i * 3); const cappedDue = due > new Date(`${endDate}T00:00:00`) ? new Date(`${endDate}T00:00:00`) : due; return { ...p, planId: `seed-${month}-${p.id}-${i}`, planQty: p.orderQty, dueDate: localDateKey(cappedDue), priority: i < 2 ? "High" : "Normal" }; }));
         setHolidays([]);
         setHours(16);
@@ -389,7 +400,16 @@ export default function Home() {
     };
   }, []);
 
-  const products = useMemo(() => (data?.products ?? []).filter((p) => selectedFamilies.includes(p.family) && p.materialCode.toLowerCase().includes(query.toLowerCase())), [data, selectedFamilies, query]);
+  // The planner can contain several batches for one material code.  Keep
+  // those batches in `planned`, but present a single master-product card in
+  // the Product Family demand pool (and catalog) so products are not repeated.
+  const products = useMemo(() => {
+    const unique = new Map<string, Product>();
+    (data?.products ?? [])
+      .filter((p) => selectedFamilies.includes(p.family) && p.materialCode.toLowerCase().includes(query.toLowerCase()))
+      .forEach((product) => { if (!unique.has(product.materialCode.toUpperCase())) unique.set(product.materialCode.toUpperCase(), product); });
+    return Array.from(unique.values());
+  }, [data, selectedFamilies, query]);
   const totalUnits = planned.reduce((s, p) => s + p.planQty, 0);
   const actualAllocationByPlan = useMemo(() => {
     const remainingActual = new Map<string, number>();
@@ -717,12 +737,12 @@ export default function Home() {
         import("xlsx").then((module) => {
           const XLSX = (module as typeof module & { default?: typeof module }).default ?? module;
           const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
-          const sheet = workbook.Sheets[workbook.SheetNames[0]];
-          if (!sheet) throw new Error("No worksheet found");
+          const sheets = workbook.SheetNames.map((name) => workbook.Sheets[name]).filter(Boolean);
+          if (!sheets.length) throw new Error("No worksheet found");
           // Parse worksheet rows directly. Converting to TSV first breaks cells
           // that contain embedded line breaks (the production report's Product
           // Details column), which previously resulted in zero imported rows.
-          const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
+          const rawRows = sheets.flatMap((sheet) => XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false }));
           const normalise = (value: unknown) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
           const numberValue = (value: unknown) => Math.max(0, Number(String(value ?? "").replace(/,/g, "").match(/-?\d+(?:\.\d+)?/)?.[0] ?? 0));
           const valueFor = (row: Record<string, unknown>, ...names: string[]) => {
@@ -750,7 +770,9 @@ export default function Home() {
             });
           } else {
             const rows = rawRows.map((row) => ({
-              product: String(valueFor(row, "partno", "partnumber", "product", "fgcode")).trim(),
+              // `FG Part no` is the finished-product identifier in the BOM
+              // workbook; other aliases remain compatible with CSV exports.
+              product: String(valueFor(row, "fgpartno", "partno", "partnumber", "product", "fgcode")).trim().toUpperCase(),
               material: String(valueFor(row, "mtrlcode", "material", "component", "item")).trim(),
               requiredQuantity: numberValue(valueFor(row, "bomqty", "requiredqty", "requiredquantity", "qty")),
               availableQuantity: numberValue(valueFor(row, "stockqty", "availableqty", "availablequantity", "inventory", "stock")),
@@ -758,9 +780,41 @@ export default function Home() {
             setUploadedBomRows((previous) => {
               const stockByMaterial = new Map(previous.map((row) => [row.material.toLowerCase(), row.availableQuantity]));
               return rows.map((row) => ({ ...row, availableQuantity: stockByMaterial.get(row.material.toLowerCase()) ?? row.availableQuantity }));
-            }); setUploadMessage(`${rows.length} BOM component rows imported.`);
+            });
+
+            // A BOM workbook is also a finished-product master-data source.
+            // Add missing products to Product Family immediately so they can
+            // be planned, while preserving the established route/cycle-time
+            // template for their family. Component/intermediate codes from
+            // other families are intentionally ignored here.
+            const familyTemplates = new Map<string, Product>();
+            [...sourceProducts, ...customProducts].forEach((product) => {
+              if (["615", "818", "1021"].includes(product.family) && !familyTemplates.has(product.family)) familyTemplates.set(product.family, product);
+            });
+            const knownCodes = new Set([...sourceProducts, ...customProducts].map((product) => product.materialCode.toUpperCase()));
+            const missingCodes = [...new Set(rows.map((row) => row.product))].filter((code) => {
+              const family = code.split("-")[0];
+              return ["615", "818", "1021"].includes(family) && !knownCodes.has(code);
+            });
+            const importedProducts = missingCodes.flatMap((code, index) => {
+              const family = code.split("-")[0];
+              const template = familyTemplates.get(family);
+              if (!template) return [];
+              return [{
+                ...template,
+                id: -Math.abs(Date.now()) - index - 1,
+                materialCode: code,
+                orderQty: 0,
+                bomAvailable: true,
+              }];
+            });
+            if (importedProducts.length) {
+              persistCatalog([...customProducts, ...importedProducts], deletedProductIds);
+              setSelectedFamilies((old) => [...new Set([...old, ...importedProducts.map((product) => product.family)])]);
+            }
+            setUploadMessage(`${rows.length} BOM component rows imported${importedProducts.length ? `; ${importedProducts.length} missing products added to Product Family.` : "."}`);
           }
-        });
+        }).catch((error) => setUploadMessage(error instanceof Error ? `Unable to read workbook: ${error.message}` : "Unable to read workbook."));
       }).catch(() => setUploadMessage("Unable to read this .xlsx workbook. Please export the required sheet as CSV/TSV."));
       return;
     }
@@ -781,7 +835,7 @@ export default function Home() {
         const rows = lines.slice(1).map(cells).map((row) => ({ date: row[dateIndex] ?? "", product: (row[productIndex] ?? "").match(/\b\d{3,4}-IL-\d+\b/i)?.[0] ?? row[productIndex] ?? "", availableQuantity: numberAt(row, quantityIndex) })).filter((row) => row.product && row.availableQuantity > 0);
         setUploadedPlanningRows(rows); setUploadMessage(`${rows.length} daily production rows imported.`);
       } else {
-        const productIndex = find("partno", "partnumber", "product", "fgcode");
+        const productIndex = find("fgpartno", "partno", "partnumber", "product", "fgcode");
         const materialIndex = find("mtrlcode", "material", "component", "item");
         const requiredIndex = find("bomqty", "requiredqty", "requiredquantity", "qty");
         const availableIndex = find("stockqty", "availableqty", "availablequantity", "inventory", "stock");
@@ -1179,7 +1233,7 @@ export default function Home() {
   };
   const openProductForm = () => {
     if (!data) return;
-    setProductDraft({ materialCode: "", family: "818", assemblyLine: "AL2", segment: "NON AUTO", bomAvailable: true, orderQty: 0, cycleTimes: Array(data.machines.length).fill(0) });
+    setProductDraft({ materialCode: "", family: "CP", assemblyLine: "AL1", segment: "CP PAIR", bomAvailable: true, orderQty: 0, cycleTimes: Array(data.machines.length).fill(0) });
     setShowProductForm(true);
   };
   const createProduct = (event: React.FormEvent) => {
@@ -1736,7 +1790,6 @@ export default function Home() {
     <header className="topbar">
       <a className="brand" href="#"><span className="ideal-mark"><img src="/brand/ideal-logo-1.jpg" alt="Ideal Gas Springs" /></span><span><b>Ideal LinePilot</b><small>MES &amp; Digital Twin · Version 2</small></span></a>
       <nav><button className={tab === "plan" ? "active" : ""} onClick={() => { setTab("plan"); setPlanSubTab("plan"); }}>Production plan</button><button className={tab === "feeder" ? "active" : ""} onClick={() => setTab("feeder")}>Store</button><button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>Date-wise schedule</button><button className={tab === "actual" ? "active" : ""} onClick={() => setTab("actual")}>Actual production</button><button className={tab === "catalog" ? "active" : ""} onClick={() => setTab("catalog")}>Product family</button><button className={tab === "maintenance" ? "active" : ""} onClick={() => setTab("maintenance")}>Preventive Maintenance</button><button className={tab === "skills" ? "active" : ""} onClick={() => setTab("skills")}>Skill Matrix</button>{authIsAdmin && <button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}>Users</button>}<button className={tab === "twin" ? "active" : ""} onClick={() => setTab("twin")}>Digital twin</button></nav>
-      <div className="period-manager"><label className="saved-periods"><span>Active planning period</span><select aria-label="Saved planning periods" value={month} onChange={(e) => { const [from, to] = e.target.value.split("_"); setStartDate(from); setEndDate(to); setDraftStartDate(from); setDraftEndDate(to); setTwinTime(0); setPeriodMessage(""); }}>{[...new Set([month, ...savedRanges])].sort().map((range) => { const [from, to] = range.split("_"); return <option value={range} key={range}>{from} → {to}</option>; })}</select></label><div className="month-control date-range-control"><label><span>From date</span><input aria-label="Planning start date" type="date" value={draftStartDate} onChange={(e) => { const nextStart = e.target.value; setDraftStartDate(nextStart); if (nextStart > draftEndDate) { const suggestedEnd = new Date(`${nextStart}T00:00:00`); suggestedEnd.setDate(suggestedEnd.getDate() + 29); setDraftEndDate(localDateKey(suggestedEnd)); } setPeriodMessage(""); }} /></label><label><span>To date</span><input aria-label="Planning end date" type="date" value={draftEndDate} min={draftStartDate} onChange={(e) => { setDraftEndDate(e.target.value); setPeriodMessage(""); }} /></label><div className="period-actions"><button type="button" onClick={addPlanningPeriod} disabled={deletingPeriod}>Add</button><button type="button" className="edit-period" onClick={updatePlanningPeriod} disabled={deletingPeriod}>Update</button><button type="button" className="delete-period" onClick={removePlanningPeriod} disabled={deletingPeriod}>{deletingPeriod ? "Removing…" : "Remove"}</button></div></div>{periodMessage && <span className={`period-message ${periodMessage.includes("overlap") || periodMessage.includes("Unable") || periodMessage.includes("valid") || periodMessage.includes("already") ? "error" : ""}`}>{periodMessage}</span>}</div>
     </header>
 
     <section className="hero">
@@ -1787,7 +1840,7 @@ export default function Home() {
         </>}
 
         {tab === "schedule" && <>
-          <div className="panel-head"><div><span>DATE-WISE EXECUTION PLAN</span><h2>Production schedule</h2></div><div className="settings"><label>Shift hours<input type="number" value={hours} min="1" max="24" onChange={(e) => setHours(+e.target.value)} /></label><label>Baseline OEE %<input type="number" value={efficiency} min="10" max="100" onChange={(e) => setEfficiency(+e.target.value)} /></label></div></div>
+          <div className="panel-head"><div><span>DATE-WISE EXECUTION PLAN</span><h2>Production schedule</h2></div><div className="settings"><label>Schedule month<input aria-label="Schedule month" type="month" value={startDate.slice(0, 7)} onChange={(e) => { if (!e.target.value) return; const [year, monthNumber] = e.target.value.split("-").map(Number); const first = new Date(year, monthNumber - 1, 1); const last = new Date(year, monthNumber, 0); setStartDate(localDateKey(first)); setEndDate(localDateKey(last)); setTwinTime(0); }} /></label><label>Shift hours<input type="number" value={hours} min="1" max="24" onChange={(e) => setHours(+e.target.value)} /></label><label>Baseline OEE %<input type="number" value={efficiency} min="10" max="100" onChange={(e) => setEfficiency(+e.target.value)} /></label></div></div>
           <div className="schedule-line-selector"><div><span>SELECT PRODUCTION AREA</span><b>View an independent schedule and production chart</b></div><label className="schedule-line-dropdown">Assembly line<select value={scheduleLine} onChange={(event) => { const nextLine = event.target.value as AssemblyLine; setScheduleLine(nextLine); setScheduleView(nextLine); setScheduleActualDraft((old) => ({ ...old, planId: "" })); }}><option value="AL1">AL1 · 615 family</option><option value="AL2">AL2 · 818 / 1021 families</option></select></label><div><button className={scheduleView === "AL1" ? "active al1" : ""} onClick={() => { setScheduleView("AL1"); setScheduleLine("AL1"); setScheduleActualDraft((old) => ({ ...old, planId: "" })); }}><strong>AL1</strong><small>615 family</small></button><button className={scheduleView === "AL2" ? "active al2" : ""} onClick={() => { setScheduleView("AL2"); setScheduleLine("AL2"); setScheduleActualDraft((old) => ({ ...old, planId: "" })); }}><strong>AL2</strong><small>818 &amp; 1021 families</small></button><button className={scheduleView === "FEEDER" ? "active feeder" : ""} onClick={() => setScheduleView("FEEDER")}><strong>FEEDER SHOP</strong><small>PC Tube Store</small></button></div></div>
         </>}
 
@@ -1795,7 +1848,7 @@ export default function Home() {
           {tab === "feeder" && <>
           <div className="store-panel-controls"><button type="button" onClick={() => setTubeCompletionOpen((open) => !open)}><span>Product flow status</span><b>{tubeCompletionOpen ? "Minimize ▲" : "Expand ▼"}</b></button><button type="button" onClick={() => setPowderTrackerOpen((open) => !open)}><span>Powder coating vendor movement</span><b>{powderTrackerOpen ? "Minimize ▲" : "Expand ▼"}</b></button></div>
           {authIsAdmin && storeSupportRows.length > 0 && <div className="store-report-actions"><b>Support report: {storeSupportRows.length} products evaluated</b><button type="button" onClick={downloadStoreSupportReport}>Download support report</button></div>}
-          {authIsAdmin && <section className="store-upload-panel"><header><div><span>DAILY PRODUCTION SUPPORT</span><h3>Upload production planning &amp; BOM data</h3><p>Choose Excel workbooks or CSV/TSV exports. For direct row parsing, export each required sheet as CSV/TSV.</p></div><small>Admin only · saved to this planning period</small></header><div className="store-upload-actions"><label>Production planning file<input type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" onChange={(event) => importStoreFile(event.target.files?.[0], "planning")} /></label><label>BOM &amp; stock file<input type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" onChange={(event) => importStoreFile(event.target.files?.[0], "bom")} /></label></div>{uploadMessage && <p className="store-upload-message">{uploadMessage}</p>}<div className="store-support-table"><div className="store-support-row store-support-head"><span>PRODUCT</span><span>AVAILABLE / PLANNED</span><span>SUPPORTED QUANTITY</span><span>LIMITING COMPONENT</span></div>{storeSupportRows.length === 0 ? <div className="store-upload-empty">Upload both exports to calculate product support.</div> : storeSupportRows.map((row) => <div className="store-support-row" key={`support-${row.product}`}><b>{row.product}</b><span>{fmt.format(row.plannedQuantity)} pcs</span><strong>{fmt.format(Math.min(row.plannedQuantity, row.supportedQuantity))} pcs</strong><small>{row.limitingComponent}</small></div>)}</div></section>}
+          {authIsAdmin && <section className="store-upload-panel"><header><div><span>DAILY PRODUCTION SUPPORT</span><h3>Upload production planning &amp; BOM data</h3><p>Choose Excel workbooks or CSV/TSV exports. For direct row parsing, export each required sheet as CSV/TSV.</p></div><small>Admin only · saved to this planning period</small></header><div className="store-upload-actions"><label>Production planning file<input type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; importStoreFile(file, "planning"); }} /></label><label>BOM &amp; stock file<input type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ""; importStoreFile(file, "bom"); }} /></label></div>{uploadMessage && <p className="store-upload-message">{uploadMessage}</p>}<div className="store-support-table"><div className="store-support-row store-support-head"><span>PRODUCT</span><span>AVAILABLE / PLANNED</span><span>SUPPORTED QUANTITY</span><span>LIMITING COMPONENT</span></div>{storeSupportRows.length === 0 ? <div className="store-upload-empty">Upload both exports to calculate product support.</div> : storeSupportRows.map((row) => <div className="store-support-row" key={`support-${row.product}`}><b>{row.product}</b><span>{fmt.format(row.plannedQuantity)} pcs</span><strong>{fmt.format(Math.min(row.plannedQuantity, row.supportedQuantity))} pcs</strong><small>{row.limitingComponent}</small></div>)}</div></section>}
           <div className="panel-head"><div><span>{feederCalendarLabel.toUpperCase()} · TUBE SHOP MONTHLY PLAN</span><h2>One month before assembly production</h2></div><p>{feederHasOverflow ? `${fmt.format(feederOverflowQuantity)} pcs carried into ${feederNextMonthLabel}` : `${feederWorkingDays} feeder working days available`}</p></div>
           <div className="feeder-requirement-basis"><div><span>ASSEMBLY PLAN</span><b>{fmt.format(totalUnits)} pcs</b></div><div><span>FINISHED ACTUAL PRODUCTION</span><b>{fmt.format(totalUnits - totalAssemblyRequirement)} pcs</b></div><div><span>TUBE SHOP REQUIREMENT</span><b>{fmt.format(totalAssemblyRequirement)} pcs</b><small>remaining requirement only</small></div><div><span>{feederHasOverflow ? "NEXT FEEDER MONTH" : "PLANNING BASIS"}</span><b>{feederHasOverflow ? feederNextMonthLabel : "Product due-date priority"}</b><small>{feederHasOverflow ? `${fmt.format(feederOverflowQuantity)} pcs overflow plan` : "planned one month before assembly"}</small></div></div>
           <div className="feeder-section-controls"><button type="button" aria-expanded={tubeCompletionOpen} onClick={() => setTubeCompletionOpen((open) => !open)}><span><b>Tube Shop completion</b><small>Material eligible for vendor dispatch</small></span><strong>{tubeCompletionOpen ? "Minimize ▲" : "Expand ▼"}</strong></button><button type="button" aria-expanded={powderTrackerOpen} onClick={() => setPowderTrackerOpen((open) => !open)}><span><b>Powder coating vendor movement</b><small>Sent, vendor WIP and returned quantities</small></span><strong>{powderTrackerOpen ? "Minimize ▲" : "Expand ▼"}</strong></button></div>
