@@ -154,7 +154,7 @@ export default function Home() {
   const [skillMachineIndex, setSkillMachineIndex] = useState(0);
   const [skillSearch, setSkillSearch] = useState("");
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  const [authChecked, setAuthChecked] = useState(true);
   const [authIsAdmin, setAuthIsAdmin] = useState(false);
   const [authRole, setAuthRole] = useState<"admin" | "operator" | "user" | null>(null);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
@@ -247,9 +247,8 @@ export default function Home() {
   const [pendingAssistantAction, setPendingAssistantAction] = useState<AssistantAction | null>(null);
   const [assistantThinking, setAssistantThinking] = useState(false);
 
-  useEffect(() => { fetch("/api/auth/session").then((response) => response.ok ? response.json() : { user: null, isAdmin: false, role: null }).then((payload: { user?: AuthUser | null; isAdmin?: boolean; role?: "admin" | "operator" | "user" | null }) => { setAuthUser(payload.user ?? null); setAuthIsAdmin(Boolean(payload.isAdmin)); setAuthRole(payload.role ?? (payload.isAdmin ? "admin" : payload.user ? "user" : null)); setAuthChecked(true); }).catch(() => { setAuthUser(null); setAuthIsAdmin(false); setAuthRole(null); setAuthChecked(true); }); }, []);
   useEffect(() => { if (!authIsAdmin) return; fetch("/api/users").then((response) => response.ok ? response.json() : { users: [] }).then((payload: { users?: ManagedUser[] }) => setManagedUsers(Array.isArray(payload.users) ? payload.users : [])).catch(() => setManagedUsers([])); }, [authIsAdmin]);
-  useEffect(() => { if (!authChecked || !authUser) return; Promise.all([
+  useEffect(() => { if (!authChecked) return; Promise.all([
     fetch("/planner-data.json").then((r) => r.json()) as Promise<PlannerData>,
     fetch("/api/products").then((r) => r.ok ? r.json() : { customProducts: [], deletedProductIds: [] }) as Promise<CatalogPayload>,
     fetch("/skill-matrix.json").then((r) => r.ok ? r.json() : null) as Promise<SkillMatrix | null>,
@@ -273,12 +272,12 @@ export default function Home() {
     });
     const mergedProducts = [...new Map([...d.products, ...custom, ...bundledBomProducts].map((product) => [product.id, { ...product, assemblyLine: assemblyLineForProduct(product) }])).values()].filter((product) => !deleted.includes(product.id));
     setData({ ...d, products: mergedProducts, families: [...new Set(mergedProducts.map((product) => product.family))].sort() });
-  }); }, [authChecked, authUser]);
+  }); }, [authChecked]);
 
   useEffect(() => {
-    if (!authChecked || !authUser) return;
+    if (!authChecked) return;
     fetch("/api/plans?list=1").then((response) => response.ok ? response.json() : { ranges: [] }).then((payload: { ranges?: string[] }) => setSavedRanges(Array.isArray(payload.ranges) ? payload.ranges : []));
-  }, [authChecked, authUser]);
+  }, [authChecked]);
 
   useEffect(() => {
     if (!data) return;
@@ -1767,8 +1766,7 @@ export default function Home() {
   };
   const submitAssistantQuestion = (event: React.FormEvent) => { event.preventDefault(); askPlanningAssistant(assistantQuestion); };
 
-  if (!authChecked) return <main className="loading"><div className="loader"/><p>Checking Google login…</p></main>;
-  if (!authUser) return <main className="auth-gate"><div className="auth-gate-card"><img src="/brand/ideal-logo-1.jpg" alt="Ideal Gas Springs" /><p className="eyebrow">IDEAL LINEPILOT · MES &amp; DIGITAL TWIN</p><h1>Sign in to Production Planner</h1><p>Production plans, actuals, machine owners and digital-twin data are available to authorized users only.</p><a className="auth-button auth-google-button" href="/api/auth/google">Continue with Google</a><small>Use your authorized Google Workspace account.</small></div></main>;
+  if (!authChecked) return <main className="loading"><div className="loader"/><p>Preparing production planner…</p></main>;
   if (!data) return <main className="loading"><div className="loader"/><p>Preparing production data…</p></main>;
   if (authRole === "operator") {
     return <main className="operator-app">
@@ -1813,7 +1811,7 @@ export default function Home() {
         <div className="product-list">{products.slice(0, 40).map((p) => <button key={p.id} className="product-card" onClick={() => addProduct(p)}>
           <span><b>{p.materialCode}</b><small>{assemblyLineName(p)} · {p.segment} · {fmt.format(p.orderQty)} pcs</small></span><span className="add">+</span><em>{p.bottleneckSeconds}s</em>
         </button>)}</div>
-        <div className="sidebar-auth">{authUser ? <><span className="auth-user">{authUser.name}</span><a className="auth-button signed-in" href="/api/auth/logout">Sign out</a></> : <a className="auth-button" href="/api/auth/google">Continue with Google</a>}</div>
+        <div className="sidebar-auth"><span className="auth-user">Local planning mode</span></div>
       </aside>}
 
       <div className={`main-panel ${tab === "feeder" ? `feeder-layout ${tubeCompletionOpen ? "" : "tube-completion-collapsed"} ${powderTrackerOpen ? "" : "powder-tracker-collapsed"}` : tab === "schedule" ? `schedule-layout ${workingHoursOpen ? "" : "working-hours-collapsed"}` : ""}`}>
