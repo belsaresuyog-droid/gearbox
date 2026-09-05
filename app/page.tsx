@@ -1145,10 +1145,14 @@ export default function Home() {
     const stationStart = firstOrder ? (scheduleTiming.get(firstOrder.planId)?.startSeconds ?? 0) + stationOffset : 0;
     const stationElapsed = twinTime - stationStart;
     const handoffInterval = cycleSeconds + 60;
-    const activeAtStation = Boolean(firstOrder && cycleSeconds > 0 && stationElapsed >= 0 && stationElapsed % handoffInterval < cycleSeconds);
     const lineEntryInterval = (route[0]?.seconds ?? 0) + 60;
     const booths = configuredBooths(stationBooths, machine.key, index, twinLine);
     const completedSlots = firstOrder && stationElapsed >= 0 && handoffInterval > 0 ? Math.floor(stationElapsed / handoffInterval) * booths : 0;
+    const remainingAtStation = firstOrder ? Math.max(0, firstOrder.planQty - completedSlots) : 0;
+    // Keep a station active while it still has unprocessed demand. This keeps
+    // short-cycle operations such as Pair numbering from appearing idle while
+    // the line is still producing.
+    const activeAtStation = Boolean(firstOrder && cycleSeconds > 0 && stationElapsed >= 0 && remainingAtStation > 0);
     const unitsStarted = firstOrder && stationElapsed >= 0 ? Math.min(firstOrder.planQty, completedSlots + (activeAtStation ? booths : 0)) : 0;
     const rawUnitsArrived = firstOrder && stationElapsed >= 0 && lineEntryInterval > 0 ? Math.min(firstOrder.planQty, Math.floor(stationElapsed / lineEntryInterval) + 1) : 0;
     // Keep no more than ten units waiting at any process. As a booth frees a
@@ -1157,7 +1161,7 @@ export default function Home() {
     const queue = Math.max(0, unitsArrived - unitsStarted);
     // Every configured booth gets a unit whenever demand is available. The
     // queue is the remaining demand beyond these active booth assignments.
-    const tokenCount = firstOrder && stationElapsed >= 0 ? Math.min(booths, Math.max(0, unitsArrived - completedSlots)) : 0;
+    const tokenCount = firstOrder && stationElapsed >= 0 && activeAtStation && remainingAtStation > 0 ? Math.min(booths, Math.max(1, remainingAtStation)) : 0;
     const tokens = firstOrder && tokenCount > 0 ? Array.from({ length: tokenCount }, (_, boothIndex) => {
       const boothElapsed = Math.max(0, stationElapsed - boothIndex * Math.max(1, cycleSeconds / Math.max(1, booths)));
       // Each booth owns its own sequence. A unit stays in the booth that
