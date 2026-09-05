@@ -1141,7 +1141,10 @@ export default function Home() {
     const processRank = new Map(routeOrder.map((key, rank) => [key, rank]));
     const route = firstOrder ? firstOrder.cycleTimes.map((seconds, stationIndex) => ({ seconds, stationIndex, key: data?.machines[stationIndex]?.key ?? "" })).filter((step) => step.seconds > 0 && step.stationIndex >= ASSEMBLY_START_INDEX).sort((a, b) => (processRank.get(a.key) ?? a.stationIndex) - (processRank.get(b.key) ?? b.stationIndex)) : [];
     const routePosition = route.findIndex((step) => step.stationIndex === index);
-    const stationOffset = route.slice(0, Math.max(0, routePosition)).reduce((sum, step) => sum + step.seconds, 0);
+  // A product reaches the next station only after the prior operation and
+  // its one-minute handoff halt. Include both in every route offset so a
+  // product cannot appear in two stations at the same simulated time.
+  const stationOffset = route.slice(0, Math.max(0, routePosition)).reduce((sum, step) => sum + step.seconds + 60, 0);
     const stationStart = firstOrder ? (scheduleTiming.get(firstOrder.planId)?.startSeconds ?? 0) + stationOffset : 0;
     const stationElapsed = twinTime - stationStart;
     const handoffInterval = cycleSeconds + 60;
