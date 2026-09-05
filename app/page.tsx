@@ -502,13 +502,11 @@ export default function Home() {
     return { shop, targets, productRows, requiredQuantity, stagedQuantity, completionRatio, completedItems, monthlyCapacity, bottleneck, days, ready: totalAssemblyRequirement === 0 || completedItems >= totalAssemblyRequirement };
   }), [feederTargets, totalAssemblyRequirement, feederWorkingDays, planned, assemblyRequiredByPlan, feederShiftActualByPlan]);
   const feederDurationDays = Math.max(0, ...feederShopSummary.map((shop) => shop.days));
+  // This factory has one direct CP Pair assembly route. There is no feeder,
+  // BOM, or powder-coating release gate before the digital twin can run.
   const feederSupportedByPlan = useMemo(() => new Map(planned.map((product) => {
-    const requirementQty = assemblyRequiredByPlan.get(product.planId) ?? 0;
-    const tubeCompleted = Math.min(requirementQty, Math.max(0, feederShiftActualByPlan.get(product.planId) ?? 0));
-    const sent = Math.min(tubeCompleted, Math.max(0, powderCoatingSent[product.planId] ?? 0));
-    const returned = Math.min(sent, Math.max(0, powderCoatingReturned[product.planId] ?? 0));
-    return [product.planId, returned];
-  })), [planned, assemblyRequiredByPlan, feederShiftActualByPlan, powderCoatingSent, powderCoatingReturned]);
+    return [product.planId, product.planQty];
+  })), [planned]);
   const tubeShopProductStatuses = useMemo(() => {
     const grouped = new Map<string, { materialCode: string; family: string; assemblyLine: AssemblyLine; planIds: string[]; required: number; tubeCompleted: number; sent: number; returned: number }>();
     planned.forEach((product) => {
