@@ -1095,7 +1095,7 @@ export default function Home() {
     return [item.planId, { startSeconds: item.startOffsetSeconds, start: item.start, finish: item.finish }];
     }));
   }, [schedule]);
-  const twinTokens = useMemo(() => schedule.map((product, orderIndex) => {
+  const twinTokens = useMemo(() => schedule.map((product) => {
     const processRank = new Map(routeOrder.map((key, index) => [key, index]));
     const route = product.cycleTimes.map((seconds, stationIndex) => ({ seconds, stationIndex, key: data?.machines[stationIndex]?.key ?? "" })).filter((step) => step.seconds > 0 && step.stationIndex >= ASSEMBLY_START_INDEX).sort((a, b) => {
       const aRank = processRank.get(a.key);
@@ -1108,7 +1108,9 @@ export default function Home() {
     const completed = Math.min(product.planQty, Math.floor(elapsed / product.effectiveBottleneckSeconds));
     const started = twinTime >= startSeconds;
     const active = started && completed < product.planQty;
-    let phase = (elapsed + orderIndex * Math.max(7, routeSeconds / Math.max(1, schedule.length))) % routeSeconds;
+    // A product must traverse the route in order. Do not offset each order's
+    // phase, otherwise a freshly started product can appear in a later station.
+    let phase = elapsed % routeSeconds;
     let selected = route[0] ?? { stationIndex: 0, seconds: 1, key: "" };
     let progress = 0;
     for (const step of route) {
