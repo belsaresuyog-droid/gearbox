@@ -141,3 +141,4 @@
 .operator-title-actions{display:flex;align-items:flex-end;gap:12px}.operator-date-picker{display:grid;gap:5px;color:#64776d;font-size:9px;font-weight:800}.operator-date-picker input{padding:10px 11px;border:1px solid #c7d8ce;border-radius:7px;background:#fff;color:#315548;font-size:11px;font-weight:700}
 .operator-days button.off{opacity:.68}.operator-days button.off>strong{background:#e9efeb}
 .maintenance-mode{grid-template-columns:1fr}.maintenance-mode .main-panel{width:100%;min-width:0}
+.flow-row>em.queue-alert{background:#df3f4f;color:#fff;box-shadow:0 0 0 2px #df3f4f33}
