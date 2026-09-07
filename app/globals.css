@@ -146,4 +146,4 @@
 /* Version2 readability adjustment: increase visible application text by 3px. */
 body :where(h1,h2,h3,h4,h5,h6,p,button,input,label,small,strong,b,em,i,a,span,td,th,li){font-size:calc(100% + 3px)}
 /* Supporting capacity text gets one additional pixel for readability. */
-.capacity-grid small,.capacity-grid article>div:first-child span{font-size:calc(100% + 4px)}
+.capacity-grid small,.capacity-grid article>div:first-child span{font-size:calc(100% + 6px)}
