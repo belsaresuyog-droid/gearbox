@@ -145,3 +145,5 @@
 .flow-booths{display:flex!important;gap:6px!important;flex-wrap:wrap!important;align-items:stretch!important}.flow-booth{display:grid;gap:3px;min-width:118px;padding:6px 8px;border:1px solid #c4d4df;border-radius:5px;background:#fff;color:#48657c!important}.flow-booth b{font-size:7px;color:#58738a}.flow-booth strong{font-size:8px;color:#1f4c6b!important;white-space:nowrap}.flow-booth small{font-size:7px;font-weight:900}.flow-booth.running{border-color:#53a77d;background:#eef9f2}.flow-booth.running small{color:#188151}.flow-booth.idle{background:#f2f5f7}.flow-booth.idle small{color:#718696}
 /* Version2 readability adjustment: increase visible application text by 3px. */
 body :where(h1,h2,h3,h4,h5,h6,p,button,input,label,small,strong,b,em,i,a,span,td,th,li){font-size:calc(100% + 3px)}
+/* Supporting capacity text gets one additional pixel for readability. */
+.capacity-grid small,.capacity-grid article>div:first-child span{font-size:calc(100% + 4px)}
