@@ -23,6 +23,9 @@ type SavedPlan = { planned: Planned[]; holidays: string[]; hours: number; effici
 type CatalogPayload = { customProducts: Product[]; deletedProductIds: number[] };
 type ProductDraft = { materialCode: string; family: string; assemblyLine: AssemblyLine; segment: string; bomAvailable: boolean; orderQty: number; cycleTimes: number[] };
 type AssemblyLine = "AL1";
+type MachineHealthPeriod = "week" | "month" | "quarter" | "year";
+type ReportPeriod = "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
+type ReportShop = "ALL" | "TUBE" | "AL1" | "AL2";
 type ChatMessage = { id: string; role: "user" | "assistant"; text: string };
 type AssistantAction = { kind: "oee" | "hours" | "addHoliday" | "removeHoliday" | "planQty" | "dueDate" | "booths"; label: string; value: number | string; planId?: string; machineKey?: string; machineIndex?: number; line?: AssemblyLine | null };
 const ASSEMBLY_START_INDEX = 0;
@@ -67,6 +70,18 @@ function configuredBooths(values: Record<string, number>, machineKey: string, in
 function planningBooths(values: Record<string, number>, machineKey: string, index: number) {
   if (index < ASSEMBLY_START_INDEX) return configuredBooths(values, machineKey, index);
   return configuredBooths(values, machineKey, index, "AL1");
+}
+
+function machineHealthCategory(name: string) {
+  const value = name.toLowerCase();
+  if (value.includes("grind")) return "Grinding";
+  if (value.includes("wash") || value.includes("clean")) return "Cleaning";
+  if (value.includes("cut")) return "Cutting";
+  if (value.includes("test")) return "Testing";
+  if (value.includes("number")) return "Numbering";
+  if (value.includes("lap")) return "Lapping";
+  if (value.includes("phos")) return "Phosphating";
+  return "Other";
 }
 
 function localDateKey(input: Date) {
@@ -161,6 +176,8 @@ export default function Home() {
   const [userDraft, setUserDraft] = useState({ name: "", email: "", role: "user" as "admin" | "operator" | "user" });
   const [userMessage, setUserMessage] = useState("");
   const [capacityView, setCapacityView] = useState<"overview" | "daily" | "graph">("overview");
+  const [machineHealthPeriod, setMachineHealthPeriod] = useState<MachineHealthPeriod>("month");
+  const [machineHealthCategoryFilter, setMachineHealthCategoryFilter] = useState("ALL");
   const [scheduleLine, setScheduleLine] = useState<AssemblyLine>("AL1");
   const [scheduleView, setScheduleView] = useState<AssemblyLine | "FEEDER">("AL1");
   const [scheduleDayView, setScheduleDayView] = useState<"plan" | "actual" | "breakdown">("plan");
@@ -170,6 +187,8 @@ export default function Home() {
   const [actualChartGranularity, setActualChartGranularity] = useState<"date" | "week" | "month">("date");
   const [actualSelectedWeek, setActualSelectedWeek] = useState("ALL");
   const [actualSelectedDate, setActualSelectedDate] = useState("");
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("weekly");
+  const [reportShop, setReportShop] = useState<ReportShop>("ALL");
   const [feederWorkingHoursOpen, setFeederWorkingHoursOpen] = useState(true);
   const [graphProcessIndex, setGraphProcessIndex] = useState(0);
   const [startDate, setStartDate] = useState("2026-09-01");
@@ -1090,6 +1109,29 @@ export default function Home() {
     const totalB = b.values.reduce((sum, value) => sum + value.percent, 0);
     return totalB - totalA || a.name.localeCompare(b.name);
   }), [processOccupancy]);
+  const machineHealthDashboard = useMemo(() => {
+    const periodDays = machineHealthPeriod === "week" ? calendarDays.slice(0, 7) : machineHealthPeriod === "quarter" ? calendarDays.slice(0, 90) : machineHealthPeriod === "year" ? calendarDays.slice(0, 365) : calendarDays;
+    const periodKeys = new Set(periodDays.map((day) => day.key));
+    const today = new Date();
+    const rows = (data?.machines ?? []).map((machine, index) => {
+      const category = machineHealthCategory(machine.name);
+      const occupancy = loadByMachine[index] ? Math.round(loadByMachine[index].days / Math.max(1, workingDays) * 100) : 0;
+      const downtimeMinutes = Array.from(periodKeys).flatMap((key) => dailyInterruptions[key] ?? []).filter((record) => !record.machine || record.machine === machine.key || record.machine === machine.name).reduce((sum, record) => { const start = timeInputToMinute(record.start); const end = timeInputToMinute(record.end); return start !== undefined && end !== undefined && end > start ? sum + end - start : sum; }, 0);
+      const availableMinutes = Math.max(1, periodDays.filter((day) => !day.off).length * averageShiftHours * 60);
+      const availability = Math.max(0, Math.min(100, Math.round((1 - downtimeMinutes / availableMinutes) * 100)));
+      const actual = actualProduction.filter((record) => periodKeys.has(record.date) && planned.some((item) => item.planId === record.planId && item.cycleTimes[index] > 0)).reduce((sum, record) => sum + record.quantity, 0);
+      const rejected = Array.from(periodKeys).reduce((sum, key) => sum + Object.entries(dailyProductionEdits).filter(([editKey]) => editKey.startsWith(`${key}:`)).reduce((inner, [, edit]) => inner + (edit.rejectionQuantity ?? 0), 0), 0);
+      const quality = actual > 0 ? Math.max(0, Math.min(100, Math.round((actual - rejected) / actual * 100))) : 0;
+      const matchingSlots = preventiveMaintenanceSlots.filter((slot) => slot.machineKey === machine.key && periodKeys.has(slot.date));
+      const pmCompleted = matchingSlots.some((slot) => new Date(`${slot.date}T00:00:00`) <= today);
+      const pmOverdue = matchingSlots.some((slot) => new Date(`${slot.date}T00:00:00`) < today && !pmCompleted);
+      const owner = machineOwners[`${activeDayPlanKey}:AL1:${machine.key}`]?.actualOperator || machineOwners[`${activeDayPlanKey}:AL1:${machine.key}`]?.plannedOperator || "Unassigned";
+      const status = pmOverdue ? "overdue" : matchingSlots.length && !pmCompleted ? "due" : occupancy === 0 ? "idle" : "healthy";
+      return { ...machine, category, occupancy, availability, quality, oee: Math.round(availability * quality / 100), owner, pmCompleted, pmOverdue, pmPlanned: matchingSlots.length > 0, status };
+    }).filter((machine) => machineHealthCategoryFilter === "ALL" || machine.category === machineHealthCategoryFilter).sort((a, b) => (a.occupancy === 0 ? 1 : 0) - (b.occupancy === 0 ? 1 : 0) || b.occupancy - a.occupancy || a.name.localeCompare(b.name));
+    const pmPlanned = rows.filter((row) => row.pmPlanned).length;
+    return { rows, total: rows.length, delayed: rows.filter((row) => row.pmOverdue).length, healthyPct: rows.length ? Math.round(rows.filter((row) => row.status === "healthy").length / rows.length * 100) : 0, occupancy: rows.length ? Math.round(rows.reduce((sum, row) => sum + row.occupancy, 0) / rows.length) : 0, oee: rows.length ? Math.round(rows.reduce((sum, row) => sum + row.oee, 0) / rows.length) : 0, pmPlanned, pmCompleted: rows.filter((row) => row.pmCompleted).length };
+  }, [machineHealthPeriod, machineHealthCategoryFilter, calendarDays, data, loadByMachine, workingDays, dailyInterruptions, averageShiftHours, actualProduction, planned, dailyProductionEdits, preventiveMaintenanceSlots, machineOwners, activeDayPlanKey]);
   const scheduleTiming = useMemo(() => {
     return new Map(schedule.map((item) => {
     return [item.planId, { startSeconds: item.startOffsetSeconds, start: item.start, finish: item.finish }];
@@ -1615,6 +1657,50 @@ export default function Home() {
     });
     return Array.from(grouped.values());
   }, [schedule, actualLine, actualLineSchedule, actualLineProduction, dailyProductionEdits, startDate, endDate, actualChartProduct, actualChartGranularity, actualSelectedWeek, activeActualChartDate, actualVsPlannedByDay, calendarDays]);
+  const reportDailyRows = useMemo(() => {
+    const shopMatches = (item: { family: string }) => reportShop === "ALL" || reportShop === "TUBE" || (reportShop === "AL1" ? item.family === "615" || item.family === "CP" : item.family !== "615" && item.family !== "CP");
+    const rows = calendarDays.map((day) => {
+      const lineItems = schedule.filter((item) => shopMatches(item) && day.value >= item.start && day.value <= item.finish);
+      const plannedPieces = reportShop === "TUBE"
+        ? feederDailyPlan.find((entry) => entry.key === day.key)?.total ?? 0
+        : lineItems.reduce((sum, item) => sum + Math.min(item.requestedPlanQty, item.dailyCapacity), 0);
+      const actualPieces = actualProduction.filter((record) => record.date === day.key && (reportShop === "ALL" || reportShop === "TUBE" || (reportShop === "AL1" ? record.family === "615" || record.family === "CP" : record.family !== "615" && record.family !== "CP"))).reduce((sum, record) => sum + record.quantity, 0);
+      const rework = Object.entries(dailyProductionEdits).filter(([key]) => key.startsWith(`${day.key}:`)).reduce((sum, [, edit]) => sum + (edit.reworkQuantity ?? 0), 0);
+      const rejection = Object.entries(dailyProductionEdits).filter(([key]) => key.startsWith(`${day.key}:`)).reduce((sum, [, edit]) => sum + (edit.rejectionQuantity ?? 0), 0);
+      return { key: day.key, label: day.key, planned: plannedPieces, actual: actualPieces, rework, rejection };
+    });
+    const bucketKey = (key: string) => {
+      const value = new Date(`${key}T00:00:00`);
+      if (reportPeriod === "daily") return key;
+      if (reportPeriod === "monthly") return key.slice(0, 7);
+      if (reportPeriod === "yearly") return key.slice(0, 4);
+      if (reportPeriod === "quarterly") return `${value.getFullYear()} Q${Math.floor(value.getMonth() / 3) + 1}`;
+      const monday = new Date(value); monday.setDate(value.getDate() - ((value.getDay() + 6) % 7)); return `Week of ${localDateKey(monday)}`;
+    };
+    const grouped = new Map<string, { key: string; label: string; planned: number; actual: number; rework: number; rejection: number }>();
+    rows.forEach((row) => { const key = bucketKey(row.key); const current = grouped.get(key) ?? { key, label: key, planned: 0, actual: 0, rework: 0, rejection: 0 }; current.planned += row.planned; current.actual += row.actual; current.rework += row.rework; current.rejection += row.rejection; grouped.set(key, current); });
+    return { daily: rows, grouped: Array.from(grouped.values()) };
+  }, [calendarDays, schedule, actualProduction, dailyProductionEdits, feederDailyPlan, reportPeriod, reportShop]);
+  const reportTodayKey = localDateKey(new Date());
+  const reportToday = reportDailyRows.daily.find((row) => row.key === reportTodayKey) ?? { key: reportTodayKey, label: reportTodayKey, planned: 0, actual: 0, rework: 0, rejection: 0 };
+  const reportYtd = reportDailyRows.daily.filter((row) => row.key >= `${new Date().getFullYear()}-01-01` && row.key < reportTodayKey).reduce((total, row) => ({ planned: total.planned + row.planned, actual: total.actual + row.actual, rework: total.rework + row.rework, rejection: total.rejection + row.rejection }), { planned: 0, actual: 0, rework: 0, rejection: 0 });
+  const reportOrderMetrics = useMemo(() => {
+    const orders = planned.filter((item) => reportShop === "ALL" || reportShop === "TUBE" || (reportShop === "AL1" ? item.family === "615" || item.family === "CP" : item.family !== "615" && item.family !== "CP"));
+    let onTime = 0; let early = 0; let delayed = 0; let leadTotal = 0; let leadCount = 0;
+    orders.forEach((order) => {
+      const output = actualProduction.filter((record) => record.planId === order.planId).reduce((sum, record) => sum + record.quantity, 0);
+      const completion = output >= order.planQty ? actualProduction.filter((record) => record.planId === order.planId).map((record) => record.date).sort().at(-1) : undefined;
+      if (!completion) return;
+      const difference = Math.round((new Date(`${completion}T00:00:00`).getTime() - new Date(`${order.dueDate}T00:00:00`).getTime()) / 86400000);
+      if (difference < 0) early += 1; else if (difference === 0) onTime += 1; else delayed += 1;
+      const idealStart = schedule.find((entry) => entry.planId === order.planId)?.start;
+      if (idealStart) { leadTotal += Math.max(0, Math.round((new Date(`${completion}T00:00:00`).getTime() - idealStart.getTime()) / 86400000) + 1); leadCount += 1; }
+    });
+    const total = orders.length;
+    return { total, onTime, early, delayed, otm: total ? (onTime / total) * 100 : 0, otd: total ? ((onTime + early) / total) * 100 : 0, leadTime: leadCount ? leadTotal / leadCount : 0 };
+  }, [planned, actualProduction, schedule, reportShop]);
+  const reportPeak = Math.max(1, ...reportDailyRows.grouped.flatMap((row) => [row.planned, row.actual, row.rework, row.rejection]));
+  const reportGraphWidth = Math.max(760, reportDailyRows.grouped.length * 150 + 100);
   const actualFieldChartPeak = Math.max(1, ...actualFieldChartRows.flatMap((row) => [row.planned, row.actual, row.rework, row.rejection]));
   const actualColumnChartWidth = Math.max(900, actualFieldChartRows.length * 170 + 100);
   const actualByPlanAndDate = new Map<string, number>();
@@ -1864,7 +1950,7 @@ export default function Home() {
   return <main>
     <header className="topbar">
       <a className="brand" href="#"><span className="ideal-mark"><img src="/brand/ideal-logo-1.jpg" alt="Ideal Gas Springs" /></span><span><b>Ideal LinePilot</b><small>MES &amp; Digital Twin · Version 2</small></span></a>
-      <nav><button className={tab === "plan" ? "active" : ""} onClick={() => { setTab("plan"); setPlanSubTab("plan"); }}>Production plan</button><button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>Date-wise schedule</button><button className={tab === "actual" ? "active" : ""} onClick={() => setTab("actual")}>Actual production</button><button className={tab === "catalog" ? "active" : ""} onClick={() => setTab("catalog")}>Product family</button><button className={tab === "maintenance" ? "active" : ""} onClick={() => setTab("maintenance")}>Preventive Maintenance</button>{authIsAdmin && <button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}>Users</button>}<button className={tab === "twin" ? "active" : ""} onClick={() => setTab("twin")}>Digital twin</button></nav>
+      <nav><button className={tab === "plan" ? "active" : ""} onClick={() => { setTab("plan"); setPlanSubTab("plan"); }}>Production plan</button><button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>Date-wise schedule</button><button className={tab === "actual" ? "active" : ""} onClick={() => setTab("actual")}>Real Time Production Reports</button><button className={tab === "catalog" ? "active" : ""} onClick={() => setTab("catalog")}>Product family</button><button className={tab === "maintenance" ? "active" : ""} onClick={() => setTab("maintenance")}>Preventive Maintenance</button>{authIsAdmin && <button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}>Users</button>}<button className={tab === "twin" ? "active" : ""} onClick={() => setTab("twin")}>Digital twin</button></nav>
     </header>
 
     <section className="hero">
@@ -1903,6 +1989,11 @@ export default function Home() {
         </>}
 
         {tab === "actual" && <>
+          <section className="realtime-report-panel"><header><div><span>IDEAL MANUFACTURING PLAN VS ACTUAL</span><h2>Real Time Production Reports</h2><p>Today’s status, year-to-date performance through yesterday, and plan adherence.</p></div><div className="report-filters"><label>Period<select aria-label="Report period" value={reportPeriod} onChange={(event) => setReportPeriod(event.target.value as ReportPeriod)}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option></select></label><label>Shop<select aria-label="Report shop" value={reportShop} onChange={(event) => setReportShop(event.target.value as ReportShop)}><option value="ALL">Ideal overall · all shops</option><option value="TUBE">Tube shop</option><option value="AL1">Assembly Line 1</option><option value="AL2">Assembly Line 2</option></select></label></div></header>
+            <div className="realtime-status-cards"><article><span>TODAY · {reportTodayKey}</span><b>{fmt.format(reportToday.actual)} / {fmt.format(reportToday.planned)} pcs</b><small>Actual / planned · {reportToday.planned ? Math.round(reportToday.actual / reportToday.planned * 100) : 0}% complete</small></article><article><span>YTD THROUGH YESTERDAY</span><b>{fmt.format(reportYtd.actual)} / {fmt.format(reportYtd.planned)} pcs</b><small>Actual / planned · {reportYtd.planned ? Math.round(reportYtd.actual / reportYtd.planned * 100) : 0}% complete</small></article><article><span>OTM · ON-TIME MANUFACTURED</span><b>{reportOrderMetrics.otm.toFixed(1)}%</b><small>{reportOrderMetrics.onTime} on time · {reportOrderMetrics.early} early · {reportOrderMetrics.delayed} delayed</small></article><article><span>CUSTOMER ON-TIME DELIVERY</span><b>{reportOrderMetrics.otd.toFixed(1)}%</b><small>Completed orders delivered on or before due date</small></article><article><span>AVG MANUFACTURING LEAD TIME</span><b>{reportOrderMetrics.leadTime.toFixed(1)} days</b><small>From ideal plan start to completed order</small></article></div>
+            <div className="realtime-report-chart"><div className="realtime-chart-legend"><span className="ideal-dot" />Ideal plan <span className="planned-dot" />Planned <span className="actual-dot" />Actual <span className="rework-dot" />Rework <span className="rejection-dot" />Rejection</div><div className="realtime-chart-scroll"><svg viewBox={`0 0 ${reportGraphWidth} 300`} role="img" aria-label="Ideal manufacturing plan versus actual production"><line x1="40" y1="250" x2={reportGraphWidth - 20} y2="250" /><polyline className="ideal-line" points={reportDailyRows.grouped.map((row, index) => { const x = 70 + index * 150 + 39; const y = 250 - row.planned / reportPeak * 205; return `${x},${y}`; }).join(" ")} />{reportDailyRows.grouped.map((row, index) => { const x = 70 + index * 150; const scale = (value: number) => value / reportPeak * 205; const idealY = 250 - scale(row.planned); return <g key={`report-${row.key}`}><rect className="report-bar planned" x={x} y={250 - scale(row.planned)} width="22" height={scale(row.planned)}><title>{row.label} · Planned {fmt.format(row.planned)} pcs</title></rect><rect className="report-bar actual" x={x + 28} y={250 - scale(row.actual)} width="22" height={scale(row.actual)}><title>{row.label} · Actual {fmt.format(row.actual)} pcs</title></rect><rect className="report-bar rework" x={x + 56} y={250 - scale(row.rework)} width="22" height={scale(row.rework)}><title>{row.label} · Rework {fmt.format(row.rework)} pcs</title></rect><rect className="report-bar rejection" x={x + 84} y={250 - scale(row.rejection)} width="22" height={scale(row.rejection)}><title>{row.label} · Rejection {fmt.format(row.rejection)} pcs</title></rect><circle className="ideal-point" cx={x + 39} cy={idealY} r="4"><title>{row.label} · Ideal plan {fmt.format(row.planned)} pcs</title></circle><text x={x + 39} y="274" textAnchor="middle">{row.label}</text></g>;})}</svg></div></div>
+            <div className="realtime-report-table"><div><b>Period</b><b>Planned</b><b>Actual</b><b>Rework</b><b>Rejection</b><b>Variance</b></div>{reportDailyRows.grouped.map((row) => <div key={`report-row-${row.key}`}><span>{row.label}</span><span>{fmt.format(row.planned)} pcs</span><span>{fmt.format(row.actual)} pcs</span><span>{fmt.format(row.rework)} pcs</span><span>{fmt.format(row.rejection)} pcs</span><strong className={row.actual >= row.planned ? "positive" : "negative"}>{row.actual >= row.planned ? "+" : ""}{fmt.format(row.actual - row.planned)} pcs</strong></div>)}</div>
+          </section>
           {actualChartGranularity === "date" && <div className="actual-chart-date-picker"><b>Select production date</b><div>{actualChartDateOptions.map((dateKey) => <button type="button" className={activeActualChartDate === dateKey ? "active" : ""} key={`chart-date-${dateKey}`} onClick={() => setActualSelectedDate(dateKey)}>{new Date(`${dateKey}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</button>)}</div></div>}
           <section className="actual-column-chart"><header><b>{actualChartGranularity === "week" ? "Weekly" : actualChartGranularity === "month" ? "Monthly" : "Date-wise"} production comparison</b><span>Blue Planned · Orange Actual · Gray Rework · Green Rejection</span></header><div className="actual-column-scroll"><svg viewBox={`0 0 ${actualColumnChartWidth} 300`} role="img" aria-label="Grouped production comparison chart"><line x1="30" y1="250" x2={actualColumnChartWidth - 30} y2="250" />{actualFieldChartRows.map((row, index) => { const groupX = 55 + index * 170; const scale = (value: number) => (value / actualFieldChartPeak) * 210; return <g key={"column-" + row.materialCode}><rect x={groupX} y={250 - scale(row.planned)} width="20" height={scale(row.planned)} fill="#5b9bd5"><title>{row.materialCode} · Planned: {fmt.format(row.planned)} pcs</title></rect><rect x={groupX + 28} y={250 - scale(row.actual)} width="20" height={scale(row.actual)} fill="#ed7d31"><title>{row.materialCode} · Actual: {fmt.format(row.actual)} pcs</title></rect><rect x={groupX + 56} y={250 - scale(row.rework)} width="20" height={scale(row.rework)} fill="#a5a5a5"><title>{row.materialCode} · Rework: {fmt.format(row.rework)} pcs</title></rect><rect x={groupX + 84} y={250 - scale(row.rejection)} width="20" height={scale(row.rejection)} fill="#70ad47"><title>{row.materialCode} · Rejection: {fmt.format(row.rejection)} pcs</title></rect><text x={groupX + 42} y="274" textAnchor="middle">{row.materialCode.length > 14 ? row.materialCode.slice(0, 12) + "…" : row.materialCode}</text></g>;})}</svg></div></section>
           <section className="actual-chart-data-table"><header><b>Production data</b><span>{actualChartGranularity === "week" && actualSelectedWeek !== "ALL" ? `Week of ${actualSelectedWeek}` : actualChartGranularity === "month" ? "Month-wise totals" : actualChartGranularity === "week" ? "Weekly totals" : "Date-wise totals"}</span></header><div className="actual-chart-data-head"><span>PERIOD / PRODUCT</span><span>PLANNED</span><span>ACTUAL</span><span>REWORK</span><span>REJECTION</span></div>{actualFieldChartRows.map((row) => <div className="actual-chart-data-row" key={`actual-data-${row.materialCode}`}><b>{row.materialCode}</b><span>{fmt.format(row.planned)} pcs</span><span>{fmt.format(row.actual)} pcs</span><span>{fmt.format(row.rework)} pcs</span><span>{fmt.format(row.rejection)} pcs</span></div>)}</section>
@@ -2073,6 +2164,7 @@ export default function Home() {
 
         {tab === "maintenance" && <section className="maintenance-tab"><div className="panel-head"><div><span>PREVENTIVE MAINTENANCE PLAN</span><h2>Weekly machine PM slots</h2></div><p>Schedule editable maintenance slots and automatically deduct their time from production capacity.</p></div><div className="pm-planner"><div className="pm-add-row"><label>Date<input type="date" min={startDate} max={endDate} value={pmDraft.date} onChange={(event) => setPmDraft((old) => ({ ...old, date: event.target.value }))} /></label><label>Assembly line<select value={pmDraft.assemblyLine} onChange={(event) => setPmDraft((old) => ({ ...old, assemblyLine: event.target.value as AssemblyLine }))}><option value="AL1">AL1</option></select></label><label>Machine<select value={pmDraft.machineKey} onChange={(event) => setPmDraft((old) => ({ ...old, machineKey: event.target.value }))}><option value="">Select machine</option>{data.machines.slice(ASSEMBLY_START_INDEX).map((machine) => <option value={machine.key} key={`maintenance-machine-${machine.key}`}>{machine.name}</option>)}</select></label><label>Start time<input type="time" value={pmDraft.startTime} onChange={(event) => setPmDraft((old) => ({ ...old, startTime: event.target.value }))} /></label><label>Duration<input type="number" min="1" step="5" value={pmDraft.durationMinutes} onChange={(event) => setPmDraft((old) => ({ ...old, durationMinutes: Math.max(1, Math.trunc(+event.target.value || 15)) }))} /><small>minutes</small></label><button type="button" onClick={addPreventiveMaintenanceSlot} disabled={!pmDraft.date || !pmDraft.machineKey}>Add PM slot</button></div><div className="pm-slot-list">{preventiveMaintenanceSlots.length === 0 && <div className="empty">No preventive-maintenance slots planned.</div>}{preventiveMaintenanceSlots.map((slot) => { const machine = data.machines.find((item) => item.key === slot.machineKey); return <article key={`maintenance-slot-${slot.id}`}><span><b>{machine?.name ?? slot.machineKey}</b><small>{slot.assemblyLine}</small></span><label>Date<input type="date" min={startDate} max={endDate} value={slot.date} onChange={(event) => updatePreventiveMaintenanceSlot(slot.id, "date", event.target.value)} /></label><label>Start<input type="time" value={slot.startTime} onChange={(event) => updatePreventiveMaintenanceSlot(slot.id, "startTime", event.target.value)} /></label><label>Duration<input type="number" min="1" step="5" value={slot.durationMinutes} onChange={(event) => updatePreventiveMaintenanceSlot(slot.id, "durationMinutes", event.target.value)} /></label><button type="button" onClick={() => setPreventiveMaintenanceSlots((old) => old.filter((item) => item.id !== slot.id))}>Remove</button></article>; })}</div></div></section>}
         {(tab === "capacity" || (tab === "plan" && planSubTab === "capacity")) && <>
+          <section className="machine-health-dashboard"><header className="machine-health-head"><div><span>MACHINE HEALTH &amp; UTILIZATION</span><h2>Machine Health</h2><p>Preventive maintenance, availability, quality, OEE and occupancy for the selected period.</p></div><div className="machine-health-filters"><label>Time period<select aria-label="Machine health time period" value={machineHealthPeriod} onChange={(event) => setMachineHealthPeriod(event.target.value as MachineHealthPeriod)}><option value="week">Week</option><option value="month">Month</option><option value="quarter">Quarter</option><option value="year">Year</option></select></label><label>Machine category<select aria-label="Machine health category" value={machineHealthCategoryFilter} onChange={(event) => setMachineHealthCategoryFilter(event.target.value)}><option value="ALL">All</option>{[...new Set((data?.machines ?? []).map((machine) => machineHealthCategory(machine.name)))].map((category) => <option value={category} key={`health-category-${category}`}>{category}</option>)}</select></label></div></header><div className="machine-health-kpis"><article><span>TOTAL MACHINES</span><b>{machineHealthDashboard.total}</b><small>Matching selected filters</small></article><article><span>DELAYED PM MACHINES</span><b>{machineHealthDashboard.delayed}</b><small>Planned PM date has passed</small></article><article><span>HEALTHY MACHINES</span><b>{machineHealthDashboard.healthyPct}%</b><small>PM current and operational</small></article><article><span>AVERAGE OCCUPANCY</span><b>{machineHealthDashboard.occupancy}%</b><small>Selected period utilization</small></article><article><span>AVERAGE OEE</span><b>{machineHealthDashboard.oee}%</b><small>Availability × quality</small></article><article><span>PM ACHIEVEMENT</span><b>{machineHealthDashboard.pmPlanned ? Math.round(machineHealthDashboard.pmCompleted / machineHealthDashboard.pmPlanned * 100) : 0}%</b><small>{machineHealthDashboard.pmCompleted} completed / {machineHealthDashboard.pmPlanned} planned</small></article></div><div className="machine-health-grid">{machineHealthDashboard.rows.map((machine) => <article className={`machine-health-card ${machine.status}`} key={`health-${machine.key}`}><header><div><b>{machine.name}</b><small>{machine.category} · AL1</small></div><i>{machine.status === "healthy" ? "Healthy" : machine.status === "due" ? "PM due" : machine.status === "overdue" ? "PM overdue" : "Idle"}</i></header><div className="machine-health-owner"><span>Operator</span><b>{machine.owner}</b></div><div className="machine-health-metrics"><span>Occupancy<strong>{machine.occupancy}%</strong></span><span>Availability<strong>{machine.availability}%</strong></span><span>Quality<strong>{machine.quality}%</strong></span><span>OEE<strong>{machine.oee}%</strong></span></div><footer><span>PM</span><b>{machine.pmCompleted ? "✓ Completed" : machine.pmPlanned ? machine.pmOverdue ? "Overdue" : "Due" : "No PM planned"}</b></footer></article>)}</div>{machineHealthDashboard.rows.length === 0 && <div className="empty">No machines match the selected filters.</div>}</section>
           <div className="panel-head"><div><span>CAPACITY CHECK · ONE ASSEMBLY LINE</span><h2>Process occupancy</h2></div><p>Based on date-wise shifts (average {averageShiftHours.toFixed(1)}h) at {efficiency}% OEE</p></div>
           <div className="capacity-tabs"><button className={capacityView === "overview" ? "active" : ""} onClick={() => setCapacityView("overview")}>Period overview</button><button className={capacityView === "daily" ? "active" : ""} onClick={() => setCapacityView("daily")}>Date-wise occupancy</button><button className={capacityView === "graph" ? "active" : ""} onClick={() => setCapacityView("graph")}>Graph</button></div>
           {capacityView === "overview" && <div className="capacity-grid">{loadByMachine.map((m) => { const pct = Math.min(100, Math.round(m.days / workingDays * 100)); return <article key={m.key}><div><b>{m.name}</b><span>{m.days.toFixed(1)} days</span></div><div className="bar"><i style={{ width: `${pct}%` }} /></div><small>{pct}% of selected-period capacity</small></article>})}</div>}
