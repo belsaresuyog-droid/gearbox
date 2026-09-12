@@ -1,5 +1,7 @@
 "use client";
 
+// Version2 deployment smoke-check marker.
+
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Machine = { key: string; name: string; section: string };
