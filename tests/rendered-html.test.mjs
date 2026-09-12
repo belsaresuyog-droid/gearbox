@@ -83,6 +83,17 @@ test("production planning includes editable due dates, assembly reassignment, an
   assert.match(page, /preventiveMaintenanceSlots/);
 });
 
+test("real-time reports expose period and shop filters with manufacturing KPIs", async () => {
+  const page = await source("app/page.tsx");
+  assert.match(page, /Real Time Production Reports/);
+  assert.match(page, /Report period/);
+  assert.match(page, /Tube shop/);
+  assert.match(page, /OTM · ON-TIME MANUFACTURED/);
+  assert.match(page, /CUSTOMER ON-TIME DELIVERY/);
+  assert.match(page, /AVG MANUFACTURING LEAD TIME/);
+  assert.match(page, /ideal-line/);
+});
+
 test("worker delegates requests to the application router", async () => {
   const worker = await source("worker/index.ts");
   assert.match(worker, /return handler\.fetch\(request, env, ctx\)/);
