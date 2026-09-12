@@ -1,5 +1,5 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
-// Deployment marker: OAuth callback configuration updated 2026-08-21.
+// Deployment marker: version2 Cloudflare deployment check updated 2026-09-12.
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 
