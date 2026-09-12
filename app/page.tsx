@@ -169,9 +169,10 @@ export default function Home() {
   const [skillMachineIndex, setSkillMachineIndex] = useState(0);
   const [skillSearch, setSkillSearch] = useState("");
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [authChecked, setAuthChecked] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
   const [authIsAdmin, setAuthIsAdmin] = useState(false);
   const [authRole, setAuthRole] = useState<"admin" | "operator" | "user" | null>(null);
+  const [operatorPreview, setOperatorPreview] = useState(false);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
   const [userDraft, setUserDraft] = useState({ name: "", email: "", role: "user" as "admin" | "operator" | "user" });
   const [userMessage, setUserMessage] = useState("");
@@ -268,6 +269,15 @@ export default function Home() {
   const [assistantMessages, setAssistantMessages] = useState<ChatMessage[]>([]);
   const [pendingAssistantAction, setPendingAssistantAction] = useState<AssistantAction | null>(null);
   const [assistantThinking, setAssistantThinking] = useState(false);
+
+  useEffect(() => {
+    fetchJsonWithTimeout<{ user: AuthUser | null; isAdmin?: boolean; role?: "admin" | "operator" | "user" | null }>("/api/auth/session", { user: null, isAdmin: false, role: null }).then((session) => {
+      setAuthUser(session.user ?? null);
+      setAuthIsAdmin(Boolean(session.isAdmin));
+      setAuthRole(session.role ?? null);
+      setAuthChecked(true);
+    });
+  }, []);
 
   useEffect(() => { if (!authIsAdmin) return; fetch("/api/users").then((response) => response.ok ? response.json() : { users: [] }).then((payload: { users?: ManagedUser[] }) => setManagedUsers(Array.isArray(payload.users) ? payload.users : [])).catch(() => setManagedUsers([])); }, [authIsAdmin]);
   useEffect(() => { if (!authChecked) return; Promise.all([
@@ -1946,10 +1956,11 @@ export default function Home() {
   const submitAssistantQuestion = (event: React.FormEvent) => { event.preventDefault(); askPlanningAssistant(assistantQuestion); };
 
   if (!authChecked) return <main className="loading"><div className="loader"/><p>Preparing production planner…</p></main>;
+  if (!authUser) return <main className="auth-gate"><section className="auth-gate-card"><img src="/brand/ideal-logo-1.jpg" alt="Ideal Gas Springs" /><p className="eyebrow">IDEAL LINEPILOT · VERSION 2</p><h1>Sign in to continue</h1><p>Use your approved Google account to access production planning, reports, preventive maintenance, and the digital twin.</p><a className="auth-button auth-google-button" href="/api/auth/google?returnTo=/">Continue with Google</a><small>Access is controlled by the administrator.</small></section></main>;
   if (!data) return <main className="loading"><div className="loader"/><p>Preparing production data…</p></main>;
-  if (authRole === "operator") {
+  if (authRole === "operator" || operatorPreview) {
     return <main className="operator-app">
-      <header className="operator-header"><div className="operator-brand"><img src="/brand/ideal-logo-1.jpg" alt="Ideal Gas Springs" /><div><b>Ideal LinePilot</b><small>Actual production data</small></div></div><div className="operator-user"><span>{authUser.name}</span><button type="button" className="operator-save-button" onClick={saveFeederPlan}>{feederSaveState === "saving" ? "Saving…" : "Save data"}</button><a className="auth-button signed-in" href="/api/auth/logout">Sign out</a></div></header>
+      <header className="operator-header"><div className="operator-brand"><img src="/brand/ideal-logo-1.jpg" alt="Ideal Gas Springs" /><div><b>Ideal LinePilot</b><small>Actual production data</small></div></div><div className="operator-user"><span>{authUser?.name ?? "Operator"}</span><button type="button" className="operator-save-button" onClick={saveFeederPlan}>{feederSaveState === "saving" ? "Saving…" : "Save data"}</button>{operatorPreview ? <button type="button" className="auth-button signed-in" onClick={() => setOperatorPreview(false)}>Back to planner</button> : <a className="auth-button signed-in" href="/api/auth/logout">Sign out</a>}</div></header>
       <section className="operator-shell">
         <div className="operator-title"><div><p className="eyebrow">SHOP-FLOOR ENTRY</p><h1>Actual production data</h1><p>Select a date from any month and enter end-of-shift quantities.</p></div><div className="operator-title-actions"><label className="operator-date-picker"><span>Select any date</span><input type="date" value={selectedDayPlanDate} onChange={(event) => setSelectedDayPlanDate(event.target.value)} /></label><div className="operator-line-switch"><button type="button" className={scheduleLine === "AL1" ? "active" : ""} onClick={() => setScheduleLine("AL1")}>AL1<small>CP Pair family</small></button></div></div></div>
         <div className="operator-layout">
@@ -1966,7 +1977,7 @@ export default function Home() {
   return <main>
     <header className="topbar">
       <a className="brand" href="#"><span className="ideal-mark"><img src="/brand/ideal-logo-1.jpg" alt="Ideal Gas Springs" /></span><span><b>Ideal LinePilot</b><small>MES &amp; Digital Twin · Version 2</small></span></a>
-      <nav><button className={tab === "plan" ? "active" : ""} onClick={() => { setTab("plan"); setPlanSubTab("plan"); }}>Production plan</button><button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>Date-wise schedule</button><button className={tab === "actual" ? "active" : ""} onClick={() => setTab("actual")}>Real Time Production Reports</button><button className={tab === "catalog" ? "active" : ""} onClick={() => setTab("catalog")}>Product family</button><button className={tab === "maintenance" ? "active" : ""} onClick={() => setTab("maintenance")}>Preventive Maintenance</button>{authIsAdmin && <button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}>Users</button>}<button className={tab === "twin" ? "active" : ""} onClick={() => setTab("twin")}>Digital twin</button></nav>
+      <nav><button className={tab === "plan" ? "active" : ""} onClick={() => { setTab("plan"); setPlanSubTab("plan"); }}>Production plan</button><button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>Date-wise schedule</button><button className={tab === "actual" ? "active" : ""} onClick={() => setTab("actual")}>Real Time Production Reports</button><button className={tab === "catalog" ? "active" : ""} onClick={() => setTab("catalog")}>Product family</button><button className={tab === "maintenance" ? "active" : ""} onClick={() => setTab("maintenance")}>Preventive Maintenance</button>{authIsAdmin && <button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}>Users</button>}<button className={tab === "twin" ? "active" : ""} onClick={() => setTab("twin")}>Digital twin</button><button type="button" onClick={() => setOperatorPreview(true)}>Operator screen</button></nav><div className="auth-area">{authUser ? <><span className="auth-user" title={authUser.email}>{authUser.name}</span><a className="auth-button signed-in" href="/api/auth/logout">Sign out</a></> : <a className="auth-button auth-google-button" href="/api/auth/google?returnTo=/">Sign in with Google</a>}</div>
     </header>
 
     <section className="hero">
